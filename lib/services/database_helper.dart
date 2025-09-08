@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/account.dart';
-import '../models/category.dart';
+import '../models/category.dart' as category_model;
 import '../models/transaction.dart' as models;
 import '../models/bill_subscription.dart';
 import '../models/loan_installment.dart';
@@ -21,14 +22,23 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    final String path = join(await getDatabasesPath(), 'monman.db');
-    
-    return await openDatabase(
-      path,
-      version: 4,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    try {
+      final String path = join(await getDatabasesPath(), 'monman.db');
+      
+      return await openDatabase(
+        path,
+        version: 4,
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+        onOpen: (db) async {
+          // Ensure foreign key constraints are enabled
+          await db.execute('PRAGMA foreign_keys = ON');
+        },
+      );
+    } catch (e) {
+      debugPrint('Database initialization error: $e');
+      rethrow;
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -292,12 +302,12 @@ class DatabaseHelper {
   }
 
   // Category operations
-  Future<int> insertCategory(Category category) async {
+  Future<int> insertCategory(category_model.Category category) async {
     final db = await database;
     return await db.insert('categories', category.toMap());
   }
 
-  Future<List<Category>> getCategories({CategoryType? type}) async {
+  Future<List<category_model.Category>> getCategories({category_model.CategoryType? type}) async {
     final db = await database;
     final List<Map<String, dynamic>> maps;
     
@@ -311,10 +321,10 @@ class DatabaseHelper {
       maps = await db.query('categories');
     }
     
-    return List.generate(maps.length, (i) => Category.fromMap(maps[i]));
+    return List.generate(maps.length, (i) => category_model.Category.fromMap(maps[i]));
   }
 
-  Future<int> updateCategory(Category category) async {
+  Future<int> updateCategory(category_model.Category category) async {
     final db = await database;
     return await db.update(
       'categories',

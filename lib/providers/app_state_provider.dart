@@ -6,6 +6,7 @@ import '../models/category.dart';
 import '../models/bill_subscription.dart';
 import '../models/loan_installment.dart';
 import '../models/app_theme_template.dart';
+import '../models/user_profile.dart';
 import '../services/database_helper.dart';
 
 class AppStateProvider extends ChangeNotifier {
@@ -14,6 +15,7 @@ class AppStateProvider extends ChangeNotifier {
   List<Category> _categories = [];
   List<BillSubscription> _billsSubscriptions = [];
   List<LoanInstallment> _loanInstallments = [];
+  UserProfile? _userProfile;
   
   String _selectedLanguage = 'English';
   String _selectedCurrency = 'USD';
@@ -26,6 +28,7 @@ class AppStateProvider extends ChangeNotifier {
   List<Category> get categories => _categories;
   List<BillSubscription> get billsSubscriptions => _billsSubscriptions;
   List<LoanInstallment> get loanInstallments => _loanInstallments;
+  UserProfile? get userProfile => _userProfile;
   
   String get selectedLanguage => _selectedLanguage;
   String get selectedCurrency => _selectedCurrency;
@@ -368,6 +371,39 @@ class AppStateProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error deleting category: $e');
       rethrow;
+    }
+  }
+
+  // User Profile Management Methods
+  Future<void> updateUserProfile(UserProfile profile) async {
+    try {
+      await DatabaseHelper().updateUserProfile(profile);
+      _userProfile = profile;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating user profile: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> createUserProfile(UserProfile profile) async {
+    try {
+      await DatabaseHelper().insertUserProfile(profile);
+      _userProfile = profile;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error creating user profile: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> loadUserProfile() async {
+    try {
+      _userProfile = await DatabaseHelper().getUserProfile();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading user profile: $e');
+      // Don't rethrow - profile is optional
     }
   }
 }

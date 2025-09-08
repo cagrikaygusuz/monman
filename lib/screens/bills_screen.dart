@@ -66,8 +66,8 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
   }
 
   Future<void> _showAddDialog() async {
-    if (_accounts.isEmpty) {
-      final appState = context.read<AppStateProvider>();
+    final appState = context.read<AppStateProvider>();
+    if (appState.accounts.isEmpty) {
       final isTurkish = appState.selectedLanguage == 'Turkish';
       _showErrorSnackBar(isTurkish ? 'Lütfen önce en az bir hesap ekleyin' : 'Please add at least one account first');
       return;
@@ -76,8 +76,8 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
     final result = await showDialog<BillSubscription>(
       context: context,
       builder: (context) => AddBillSubscriptionDialog(
-        accounts: _accounts,
-        categories: _categories,
+        accounts: appState.accounts,
+        categories: appState.categories,
       ),
     );
 

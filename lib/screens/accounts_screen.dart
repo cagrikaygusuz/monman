@@ -6,8 +6,21 @@ import '../providers/app_state_provider.dart';
 import '../widgets/add_account_dialog.dart';
 import 'account_detail_screen.dart';
 
-class AccountsScreen extends StatelessWidget {
+class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
+
+  @override
+  State<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends State<AccountsScreen> {
+  // Track expanded state for each account type
+  final Map<AccountType, bool> _expandedStates = {
+    AccountType.bankAccount: true,
+    AccountType.creditCard: true,
+    AccountType.loan: true,
+    AccountType.depositAccount: true,
+  };
 
   Future<void> _showAddAccountDialog(BuildContext context) async {
     final result = await showDialog<Account>(
@@ -344,61 +357,86 @@ class AccountsScreen extends StatelessWidget {
   Widget _buildCategorySection(BuildContext context, AccountType type, List<Account> accounts, bool isTurkish) {
     final categoryName = _getAccountTypeName(type, isTurkish);
     final categoryIcon = _getAccountTypeIcon(type);
+    final isExpanded = _expandedStates[type] ?? true;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                categoryIcon,
-                color: Theme.of(context).primaryColor,
-                size: 20,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                categoryName,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _expandedStates[type] = !isExpanded;
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  categoryIcon,
                   color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.bold,
+                  size: 20,
                 ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: AppSpacing.xs,
-                ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                ),
-                child: Text(
-                  '${accounts.length}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white,
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  categoryName,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).primaryColor,
                     fontWeight: FontWeight.bold,
                   ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Text(
+                    '${accounts.length}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Icon(
+                  isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  color: Theme.of(context).primaryColor,
+                  size: 24,
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 300),
+          crossFadeState: isExpanded 
+              ? CrossFadeState.showFirst 
+              : CrossFadeState.showSecond,
+          firstChild: Column(
+            children: [
+              ...accounts.map((account) => 
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _buildAccountCard(context, account, isTurkish),
                 ),
               ),
             ],
           ),
-        ),
-        ...accounts.map((account) => 
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: _buildAccountCard(context, account, isTurkish),
-          ),
+          secondChild: const SizedBox.shrink(),
         ),
         const SizedBox(height: AppSpacing.lg),
       ],
