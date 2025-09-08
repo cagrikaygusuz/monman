@@ -4,6 +4,7 @@ import '../constants/app_theme.dart';
 import '../models/account.dart';
 import '../providers/app_state_provider.dart';
 import '../widgets/add_account_dialog.dart';
+import 'account_detail_screen.dart';
 
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
@@ -61,7 +62,7 @@ class AccountsScreen extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
@@ -86,7 +87,7 @@ class AccountsScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppTheme.secondaryColor,
+        backgroundColor: Colors.green,
       ),
     );
   }
@@ -95,7 +96,7 @@ class AccountsScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppTheme.errorColor,
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -107,26 +108,25 @@ class AccountsScreen extends StatelessWidget {
         final accounts = appState.accounts;
         final isLoading = appState.isLoading;
 
+        final selectedLanguage = appState.selectedLanguage;
+        final isTurkish = selectedLanguage == 'Turkish';
+        
         return Scaffold(
-          backgroundColor: AppTheme.backgroundColor,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
-            title: const Text('Accounts'),
+            title: Text(isTurkish ? 'Hesaplar' : 'Accounts'),
             backgroundColor: Colors.transparent,
             elevation: 0,
           ),
           body: isLoading
               ? const Center(child: CircularProgressIndicator())
               : accounts.isEmpty
-                  ? _buildEmptyState(context)
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      itemCount: accounts.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: AppSpacing.sm),
-                      itemBuilder: (context, index) => _buildAccountCard(context, accounts[index]),
-                    ),
+                  ? _buildEmptyState(context, isTurkish)
+                  : _buildAccountsByCategory(context, accounts, isTurkish),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _showAddAccountDialog(context),
-            backgroundColor: AppTheme.primaryColor,
+            backgroundColor: Theme.of(context).primaryColor,
+            heroTag: "accounts_fab",
             child: const Icon(Icons.add, color: Colors.white),
           ),
         );
@@ -134,7 +134,7 @@ class AccountsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, bool isTurkish) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -148,14 +148,16 @@ class AccountsScreen extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
-              'No accounts yet',
+              isTurkish ? 'Henüz hesap yok' : 'No accounts yet',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: Colors.grey[600],
                   ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Add your first account to start managing your finances',
+              isTurkish 
+                  ? 'Finansmanınızı yönetmeye başlamak için ilk hesabınızı ekleyin'
+                  : 'Add your first account to start managing your finances',
               style: Theme.of(context).textTheme.bodyLarge,
               textAlign: TextAlign.center,
             ),
@@ -163,7 +165,7 @@ class AccountsScreen extends StatelessWidget {
             ElevatedButton.icon(
               onPressed: () => _showAddAccountDialog(context),
               icon: const Icon(Icons.add),
-              label: const Text('Add Account'),
+              label: Text(isTurkish ? 'Hesap Ekle' : 'Add Account'),
             ),
           ],
         ),
@@ -171,85 +173,126 @@ class AccountsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAccountCard(BuildContext context, Account account) {
+  Widget _buildAccountCard(BuildContext context, Account account, bool isTurkish) {
+    final appState = context.watch<AppStateProvider>();
+    final themeColor = _getAccountColor(account, appState);
+    
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                  child: Icon(
-                    _getAccountTypeIcon(account.type),
-                    color: AppTheme.primaryColor,
+      color: themeColor,
+      elevation: 4,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AccountDetailScreen(account: account),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.2),
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: Icon(
+                      _getAccountTypeIcon(account.type),
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          account.name,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          _getAccountTypeName(account.type, isTurkish),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withOpacity(0.8),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        account.name,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        '${context.read<AppStateProvider>().getCurrencySymbol()}${account.balance.toStringAsFixed(2)}',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
                       Text(
-                        _getAccountTypeName(account.type),
+                        account.currency,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppTheme.textSecondary,
+                              color: Colors.white.withOpacity(0.8),
                             ),
                       ),
                     ],
                   ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${context.read<AppStateProvider>().getCurrencySymbol()}${account.balance.toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: account.balance >= 0 ? AppTheme.secondaryColor : AppTheme.errorColor,
-                            fontWeight: FontWeight.bold,
-                          ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _showEditAccountDialog(context, account),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white),
+                      ),
+                      child: Text(isTurkish ? 'Düzenle' : 'Edit'),
                     ),
-                    Text(
-                      account.currency,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.textSecondary,
-                          ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _showEditAccountDialog(context, account),
-                    child: const Text('Edit'),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _deleteAccount(context, account),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.errorColor,
-                      side: const BorderSide(color: AppTheme.errorColor),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _deleteAccount(context, account),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white),
+                        backgroundColor: Colors.red.withOpacity(0.2),
+                      ),
+                      child: Text(isTurkish ? 'Sil' : 'Delete'),
                     ),
-                    child: const Text('Delete'),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Color _getAccountColor(Account account, AppStateProvider appState) {
+    if (account.color != null) {
+      try {
+        final colorValue = int.parse(account.color!.replaceAll('#', ''), radix: 16);
+        return Color(0xFF000000 | colorValue);
+      } catch (e) {
+        return appState.selectedTheme.primaryColor;
+      }
+    }
+    return appState.selectedTheme.primaryColor;
   }
 
   IconData _getAccountTypeIcon(AccountType type) {
@@ -265,16 +308,100 @@ class AccountsScreen extends StatelessWidget {
     }
   }
 
-  String _getAccountTypeName(AccountType type) {
+  String _getAccountTypeName(AccountType type, bool isTurkish) {
     switch (type) {
       case AccountType.bankAccount:
-        return 'Bank Account';
+        return isTurkish ? 'Banka Hesapları' : 'Bank Accounts';
       case AccountType.creditCard:
-        return 'Credit Card';
+        return isTurkish ? 'Kredi Kartları' : 'Credit Cards';
       case AccountType.loan:
-        return 'Loan';
+        return isTurkish ? 'Krediler' : 'Loans';
       case AccountType.depositAccount:
-        return 'Deposit Account';
+        return isTurkish ? 'Mevduat Hesapları' : 'Deposit Accounts';
     }
+  }
+
+  Widget _buildAccountsByCategory(BuildContext context, List<Account> accounts, bool isTurkish) {
+    // Group accounts by type
+    final Map<AccountType, List<Account>> groupedAccounts = {};
+    for (final account in accounts) {
+      if (!groupedAccounts.containsKey(account.type)) {
+        groupedAccounts[account.type] = [];
+      }
+      groupedAccounts[account.type]!.add(account);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      children: [
+        ...groupedAccounts.entries.map((entry) => 
+          _buildCategorySection(context, entry.key, entry.value, isTurkish)
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategorySection(BuildContext context, AccountType type, List<Account> accounts, bool isTurkish) {
+    final categoryName = _getAccountTypeName(type, isTurkish);
+    final categoryIcon = _getAccountTypeIcon(type);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                categoryIcon,
+                color: Theme.of(context).primaryColor,
+                size: 20,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                categoryName,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                ),
+                child: Text(
+                  '${accounts.length}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...accounts.map((account) => 
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: _buildAccountCard(context, account, isTurkish),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+      ],
+    );
   }
 }

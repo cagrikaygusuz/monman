@@ -1,111 +1,89 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../constants/app_theme.dart';
-import '../services/database_helper.dart';
+import '../providers/app_state_provider.dart';
 
-class FinancialSummaryCard extends StatefulWidget {
+class FinancialSummaryCard extends StatelessWidget {
   const FinancialSummaryCard({super.key});
 
   @override
-  State<FinancialSummaryCard> createState() => _FinancialSummaryCardState();
-}
-
-class _FinancialSummaryCardState extends State<FinancialSummaryCard> {
-  Map<String, double>? _summary;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSummary();
-  }
-
-  Future<void> _loadSummary() async {
-    try {
-      final summary = await DatabaseHelper().getFinancialSummary();
-      if (mounted) {
-        setState(() {
-          _summary = summary;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Consumer<AppStateProvider>(
+      builder: (context, appState, child) {
+        final selectedLanguage = appState.selectedLanguage;
+        final isTurkish = selectedLanguage == 'Turkish';
+        final currencySymbol = appState.getCurrencySymbol();
+        final totalIncome = appState.totalIncome;
+        final totalExpenses = appState.totalExpenses;
+        final netBalance = totalIncome - totalExpenses;
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.analytics_outlined,
-                  color: AppTheme.primaryColor,
-                  size: 24,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.analytics_outlined,
+                      color: appState.selectedTheme.primaryColor,
+                      size: 24,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      isTurkish ? 'Mali Özet' : 'Financial Summary',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  'Financial Summary',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                const SizedBox(height: AppSpacing.md),
+                Column(
+                  children: [
+                    _buildSummaryRow(
+                      context,
+                      isTurkish ? 'Toplam Gelir' : 'Total Income',
+                      totalIncome,
+                      Colors.green,
+                      Icons.trending_up,
+                      currencySymbol,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _buildSummaryRow(
+                      context,
+                      isTurkish ? 'Toplam Gider' : 'Total Expenses',
+                      totalExpenses,
+                      Colors.red,
+                      Icons.trending_down,
+                      currencySymbol,
+                    ),
+                    const Divider(height: AppSpacing.lg * 2),
+                    _buildSummaryRow(
+                      context,
+                      isTurkish ? 'Net Bakiye' : 'Net Balance',
+                      netBalance,
+                      netBalance >= 0 ? Colors.green : Colors.red,
+                      Icons.account_balance_wallet,
+                      currencySymbol,
+                      isTotal: true,
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(AppSpacing.lg),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else
-              Column(
-                children: [
-                  _buildSummaryRow(
-                    'Total Income',
-                    _summary?['income'] ?? 0.0,
-                    AppTheme.secondaryColor,
-                    Icons.trending_up,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _buildSummaryRow(
-                    'Total Expenses',
-                    _summary?['expenses'] ?? 0.0,
-                    AppTheme.errorColor,
-                    Icons.trending_down,
-                  ),
-                  const Divider(height: AppSpacing.lg * 2),
-                  _buildSummaryRow(
-                    'Net Balance',
-                    _summary?['balance'] ?? 0.0,
-                    (_summary?['balance'] ?? 0.0) >= 0
-                        ? AppTheme.secondaryColor
-                        : AppTheme.errorColor,
-                    Icons.account_balance_wallet,
-                    isTotal: true,
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildSummaryRow(
+    BuildContext context,
     String label,
     double amount,
     Color color,
-    IconData icon, {
+    IconData icon,
+    String currencySymbol, {
     bool isTotal = false,
   }) {
     return Row(
@@ -123,7 +101,7 @@ class _FinancialSummaryCardState extends State<FinancialSummaryCard> {
           ),
         ),
         Text(
-          '\$${amount.toStringAsFixed(2)}',
+          '$currencySymbol${amount.toStringAsFixed(2)}',
           style: isTotal
               ? Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: color,

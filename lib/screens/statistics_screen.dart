@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
 import '../constants/app_theme.dart';
 import '../models/transaction.dart' as models;
 import '../models/category.dart';
+import '../models/account.dart';
+import '../providers/app_state_provider.dart';
 import '../services/database_helper.dart';
 
 class StatisticsScreen extends StatefulWidget {
@@ -12,16 +15,26 @@ class StatisticsScreen extends StatefulWidget {
   State<StatisticsScreen> createState() => _StatisticsScreenState();
 }
 
-class _StatisticsScreenState extends State<StatisticsScreen> {
+class _StatisticsScreenState extends State<StatisticsScreen> with TickerProviderStateMixin {
   List<models.Transaction> _transactions = [];
   List<Category> _categories = [];
+  List<Account> _accounts = [];
   bool _isLoading = true;
   DateTimeRange? _selectedDateRange;
+  String _selectedPeriod = 'all'; // all, thisMonth, lastMonth, thisYear
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 6, vsync: this);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -29,12 +42,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       final futures = await Future.wait([
         DatabaseHelper().getTransactions(),
         DatabaseHelper().getCategories(),
+        DatabaseHelper().getAccounts(),
       ]);
 
       if (mounted) {
         setState(() {
           _transactions = futures[0] as List<models.Transaction>;
           _categories = futures[1] as List<Category>;
+          _accounts = futures[2] as List<Account>;
           _isLoading = false;
         });
       }
@@ -48,52 +63,115 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   List<models.Transaction> get _filteredTransactions {
-    if (_selectedDateRange == null) return _transactions;
+    final now = DateTime.now();
+    List<models.Transaction> filtered = _transactions;
+
+    // Apply period filter
+    switch (_selectedPeriod) {
+      case 'thisMonth':
+        filtered = _transactions.where((t) =>
+          t.date.year == now.year && t.date.month == now.month).toList();
+        break;
+      case 'lastMonth':
+        final lastMonth = DateTime(now.year, now.month - 1);
+        filtered = _transactions.where((t) =>
+          t.date.year == lastMonth.year && t.date.month == lastMonth.month).toList();
+        break;
+      case 'thisYear':
+        filtered = _transactions.where((t) => t.date.year == now.year).toList();
+        break;
+      case 'all':
+      default:
+        filtered = _transactions;
+    }
     
-    return _transactions.where((transaction) {
-      final date = transaction.date;
-      return date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
-             date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
-    }).toList();
+    // Apply date range filter if set
+    if (_selectedDateRange != null) {
+      filtered = filtered.where((transaction) {
+        final date = transaction.date;
+        return date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+               date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
+      }).toList();
+    }
+    
+    return filtered;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Statistics & Reports'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.date_range),
-            onPressed: _selectDateRange,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _transactions.isEmpty
-              ? _buildEmptyState()
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_selectedDateRange != null) _buildDateRangeCard(),
-                      _buildOverviewCards(),
-                      const SizedBox(height: AppSpacing.lg),
-                      _buildIncomeVsExpensesChart(),
-                      const SizedBox(height: AppSpacing.lg),
-                      _buildCategoryBreakdownChart(),
-                      const SizedBox(height: AppSpacing.lg),
-                      _buildMonthlyTrendChart(),
-                      const SizedBox(height: AppSpacing.lg),
-                      _buildCategoryReports(),
-                    ],
+    return Consumer<AppStateProvider>(
+      builder: (context, appState, child) {
+        final isTurkish = appState.selectedLanguage == 'Turkish';
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(isTurkish ? 'İstatistikler ve Raporlar' : 'Statistics & Reports'),
+            elevation: 0,
+            actions: [
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.filter_alt),
+                onSelected: (period) {
+                  setState(() {
+                    _selectedPeriod = period;
+                    if (period != 'custom') _selectedDateRange = null;
+                  });
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'all',
+                    child: Text(isTurkish ? 'Tümü' : 'All Time'),
                   ),
-                ),
+                  PopupMenuItem(
+                    value: 'thisMonth',
+                    child: Text(isTurkish ? 'Bu Ay' : 'This Month'),
+                  ),
+                  PopupMenuItem(
+                    value: 'lastMonth',
+                    child: Text(isTurkish ? 'Geçen Ay' : 'Last Month'),
+                  ),
+                  PopupMenuItem(
+                    value: 'thisYear',
+                    child: Text(isTurkish ? 'Bu Yıl' : 'This Year'),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: 'custom',
+                    child: Text(isTurkish ? 'Özel Tarih Aralığı' : 'Custom Range'),
+                    onTap: () => Future.delayed(Duration.zero, _selectDateRange),
+                  ),
+                ],
+              ),
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabs: [
+                Tab(text: isTurkish ? 'Genel' : 'Overview'),
+                Tab(text: isTurkish ? 'Grafikler' : 'Charts'),
+                Tab(text: isTurkish ? 'Kategoriler' : 'Categories'),
+                Tab(text: isTurkish ? 'Hesaplar' : 'Accounts'),
+                Tab(text: isTurkish ? 'Trendler' : 'Trends'),
+                Tab(text: isTurkish ? 'İçgörüler' : 'Insights'),
+              ],
+            ),
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _transactions.isEmpty
+                  ? _buildEmptyState()
+                  : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildOverviewTab(isTurkish, appState),
+                        _buildChartsTab(isTurkish),
+                        _buildCategoriesTab(isTurkish),
+                        _buildAccountsTab(isTurkish, appState),
+                        _buildTrendsTab(isTurkish, appState),
+                        _buildInsightsTab(isTurkish, appState),
+                      ],
+                    ),
+        );
+      },
     );
   }
 
@@ -128,16 +206,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildDateRangeCard() {
+  Widget _buildDateRangeCard(bool isTurkish) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(16.0),
         child: Row(
           children: [
-            Icon(Icons.date_range, color: AppTheme.primaryColor),
-            const SizedBox(width: AppSpacing.sm),
+            Icon(Icons.date_range, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 12),
             Text(
-              'Period: ${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}/${_selectedDateRange!.end.year}',
+              '${isTurkish ? "Dönem" : "Period"}: ${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}/${_selectedDateRange!.end.year}',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const Spacer(),
@@ -145,9 +223,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               onPressed: () {
                 setState(() {
                   _selectedDateRange = null;
+                  _selectedPeriod = 'all';
                 });
               },
-              child: const Text('Clear'),
+              child: Text(isTurkish ? 'Temizle' : 'Clear'),
             ),
           ],
         ),
@@ -155,7 +234,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildOverviewCards() {
+  Widget _buildOverviewCards(bool isTurkish, AppStateProvider appState) {
     final income = _filteredTransactions
         .where((t) => t.type == models.TransactionType.income)
         .fold<double>(0.0, (sum, t) => sum + t.amount);
@@ -166,41 +245,42 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     
     final balance = income - expenses;
     final transactionCount = _filteredTransactions.length;
+    final currencySymbol = appState.getCurrencySymbol();
 
     return Row(
       children: [
         Expanded(
           child: _buildStatCard(
-            'Total Income',
-            '\$${income.toStringAsFixed(2)}',
-            AppTheme.secondaryColor,
+            isTurkish ? 'Toplam Gelir' : 'Total Income',
+            '$currencySymbol${income.toStringAsFixed(2)}',
+            Colors.green,
             Icons.trending_up,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: 12),
         Expanded(
           child: _buildStatCard(
-            'Total Expenses',
-            '\$${expenses.toStringAsFixed(2)}',
-            AppTheme.errorColor,
+            isTurkish ? 'Toplam Gider' : 'Total Expenses',
+            '$currencySymbol${expenses.toStringAsFixed(2)}',
+            Colors.red,
             Icons.trending_down,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: 12),
         Expanded(
           child: _buildStatCard(
-            'Net Balance',
-            '\$${balance.toStringAsFixed(2)}',
-            balance >= 0 ? AppTheme.secondaryColor : AppTheme.errorColor,
+            isTurkish ? 'Net Bakiye' : 'Net Balance',
+            '$currencySymbol${balance.toStringAsFixed(2)}',
+            balance >= 0 ? Colors.green : Colors.red,
             Icons.account_balance_wallet,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: 12),
         Expanded(
           child: _buildStatCard(
-            'Transactions',
+            isTurkish ? 'İşlem Sayısı' : 'Transactions',
             transactionCount.toString(),
-            AppTheme.primaryColor,
+            Theme.of(context).primaryColor,
             Icons.receipt_long,
           ),
         ),
@@ -236,7 +316,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildIncomeVsExpensesChart() {
+  Widget _buildIncomeVsExpensesChart(bool isTurkish) {
     final income = _filteredTransactions
         .where((t) => t.type == models.TransactionType.income)
         .fold<double>(0.0, (sum, t) => sum + t.amount);
@@ -256,7 +336,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Income vs Expenses',
+              isTurkish ? 'Gelir vs Gider' : 'Income vs Expenses',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -268,7 +348,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     PieChartSectionData(
                       color: AppTheme.secondaryColor,
                       value: income,
-                      title: 'Income\n\$${income.toStringAsFixed(0)}',
+                      title: '${isTurkish ? "Gelir" : "Income"}\n\$${income.toStringAsFixed(0)}',
                       radius: 80,
                       titleStyle: const TextStyle(
                         fontSize: 12,
@@ -279,7 +359,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     PieChartSectionData(
                       color: AppTheme.errorColor,
                       value: expenses,
-                      title: 'Expenses\n\$${expenses.toStringAsFixed(0)}',
+                      title: '${isTurkish ? "Gider" : "Expenses"}\n\$${expenses.toStringAsFixed(0)}',
                       radius: 80,
                       titleStyle: const TextStyle(
                         fontSize: 12,
@@ -299,7 +379,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildCategoryBreakdownChart() {
+  Widget _buildCategoryBreakdownChart(bool isTurkish) {
     final expensesByCategory = <String, double>{};
     
     for (final transaction in _filteredTransactions) {
@@ -340,7 +420,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Expenses by Category',
+              isTurkish ? 'Kategorilere Göre Giderler' : 'Expenses by Category',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -379,7 +459,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildMonthlyTrendChart() {
+  Widget _buildMonthlyTrendChart(bool isTurkish) {
     final monthlyData = <String, Map<String, double>>{};
     
     for (final transaction in _filteredTransactions) {
@@ -413,7 +493,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Monthly Trend',
+              isTurkish ? 'Aylık Trend' : 'Monthly Trend',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -469,9 +549,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildLegendItem('Income', AppTheme.secondaryColor),
-                const SizedBox(width: AppSpacing.lg),
-                _buildLegendItem('Expenses', AppTheme.errorColor),
+                _buildLegendItem(isTurkish ? 'Gelir' : 'Income', Colors.green),
+                const SizedBox(width: 20),
+                _buildLegendItem(isTurkish ? 'Gider' : 'Expenses', Colors.red),
               ],
             ),
           ],
@@ -494,7 +574,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildCategoryReports() {
+  Widget _buildCategoryReports(bool isTurkish) {
     final categoryTotals = <String, Map<String, double>>{};
     
     for (final transaction in _filteredTransactions) {
@@ -531,7 +611,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Category Reports',
+              isTurkish ? 'Kategori Raporları' : 'Category Reports',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: AppSpacing.md),
@@ -579,7 +659,722 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Future<void> _selectDateRange() async {
+  Widget _buildOverviewTab(bool isTurkish, AppStateProvider appState) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_selectedDateRange != null) _buildDateRangeCard(isTurkish),
+          _buildOverviewCards(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildAdvancedMetrics(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildMonthlyComparison(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildTopSpendingCategories(isTurkish),
+          const SizedBox(height: 20),
+          _buildRecentTransactionsSummary(isTurkish),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartsTab(bool isTurkish) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          _buildIncomeVsExpensesChart(isTurkish),
+          const SizedBox(height: 20),
+          _buildCategoryBreakdownChart(isTurkish),
+          const SizedBox(height: 20),
+          _buildMonthlyTrendChart(isTurkish),
+          const SizedBox(height: 20),
+          _buildWeeklySpendingChart(isTurkish),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoriesTab(bool isTurkish) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          _buildCategoryReports(isTurkish),
+          const SizedBox(height: 20),
+          _buildCategoryComparison(isTurkish),
+          const SizedBox(height: 20),
+          _buildCategoryTrends(isTurkish, _filteredTransactions),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountsTab(bool isTurkish, AppStateProvider appState) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          _buildAccountBalances(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildAccountActivity(isTurkish),
+          const SizedBox(height: 20),
+          _buildAccountTransactionFlow(isTurkish),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthlyComparison(bool isTurkish, AppStateProvider appState) {
+    final now = DateTime.now();
+    final thisMonth = DateTime(now.year, now.month);
+    final lastMonth = DateTime(now.year, now.month - 1);
+    final twoMonthsAgo = DateTime(now.year, now.month - 2);
+    
+    final thisMonthTransactions = _transactions.where((t) =>
+      t.date.year == thisMonth.year && t.date.month == thisMonth.month).toList();
+    
+    final lastMonthTransactions = _transactions.where((t) =>
+      t.date.year == lastMonth.year && t.date.month == lastMonth.month).toList();
+    
+    final twoMonthsAgoTransactions = _transactions.where((t) =>
+      t.date.year == twoMonthsAgo.year && t.date.month == twoMonthsAgo.month).toList();
+
+    final thisMonthIncome = thisMonthTransactions
+        .where((t) => t.type == models.TransactionType.income)
+        .fold<double>(0.0, (sum, t) => sum + t.amount);
+    
+    final thisMonthExpenses = thisMonthTransactions
+        .where((t) => t.type == models.TransactionType.expense)
+        .fold<double>(0.0, (sum, t) => sum + t.amount);
+
+    final lastMonthIncome = lastMonthTransactions
+        .where((t) => t.type == models.TransactionType.income)
+        .fold<double>(0.0, (sum, t) => sum + t.amount);
+    
+    final lastMonthExpenses = lastMonthTransactions
+        .where((t) => t.type == models.TransactionType.expense)
+        .fold<double>(0.0, (sum, t) => sum + t.amount);
+
+    final incomeChange = lastMonthIncome > 0 
+      ? ((thisMonthIncome - lastMonthIncome) / lastMonthIncome * 100) 
+      : 0.0;
+    
+    final expenseChange = lastMonthExpenses > 0 
+      ? ((thisMonthExpenses - lastMonthExpenses) / lastMonthExpenses * 100) 
+      : 0.0;
+
+    final currencySymbol = appState.getCurrencySymbol();
+    
+    final monthNames = isTurkish 
+      ? ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 
+         'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+      : ['January', 'February', 'March', 'April', 'May', 'June',
+         'July', 'August', 'September', 'October', 'November', 'December'];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Aylık Karşılaştırma' : 'Monthly Comparison',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildComparisonCard(
+                    isTurkish ? 'Bu Ay Gelir' : 'This Month Income',
+                    '$currencySymbol${thisMonthIncome.toStringAsFixed(2)}',
+                    incomeChange,
+                    '${monthNames[lastMonth.month - 1]}',
+                    Colors.green,
+                    isTurkish,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildComparisonCard(
+                    isTurkish ? 'Bu Ay Gider' : 'This Month Expenses',
+                    '$currencySymbol${thisMonthExpenses.toStringAsFixed(2)}',
+                    expenseChange,
+                    '${monthNames[lastMonth.month - 1]}',
+                    Colors.red,
+                    isTurkish,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isTurkish ? 'Son 3 Ay Trendi' : 'Last 3 Months Trend',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            _build3MonthComparison(thisMonthTransactions, lastMonthTransactions, twoMonthsAgoTransactions, 
+                                  monthNames, thisMonth, lastMonth, twoMonthsAgo, isTurkish, currencySymbol),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComparisonCard(String title, String amount, double changePercent, 
+      String comparedTo, Color color, bool isTurkish) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            amount,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                changePercent >= 0 ? Icons.trending_up : Icons.trending_down,
+                color: changePercent >= 0 ? Colors.green : Colors.red,
+                size: 16,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${changePercent.abs().toStringAsFixed(1)}%',
+                style: TextStyle(
+                  color: changePercent >= 0 ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${isTurkish ? "vs" : "vs"} $comparedTo',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _build3MonthComparison(List<models.Transaction> thisMonth, List<models.Transaction> lastMonth,
+      List<models.Transaction> twoMonthsAgo, List<String> monthNames, DateTime thisMonthDate, 
+      DateTime lastMonthDate, DateTime twoMonthsAgoDate, bool isTurkish, String currencySymbol) {
+    
+    final data = [
+      {
+        'month': monthNames[twoMonthsAgoDate.month - 1],
+        'income': twoMonthsAgo.where((t) => t.type == models.TransactionType.income).fold<double>(0.0, (sum, t) => sum + t.amount),
+        'expenses': twoMonthsAgo.where((t) => t.type == models.TransactionType.expense).fold<double>(0.0, (sum, t) => sum + t.amount),
+      },
+      {
+        'month': monthNames[lastMonthDate.month - 1],
+        'income': lastMonth.where((t) => t.type == models.TransactionType.income).fold<double>(0.0, (sum, t) => sum + t.amount),
+        'expenses': lastMonth.where((t) => t.type == models.TransactionType.expense).fold<double>(0.0, (sum, t) => sum + t.amount),
+      },
+      {
+        'month': monthNames[thisMonthDate.month - 1],
+        'income': thisMonth.where((t) => t.type == models.TransactionType.income).fold<double>(0.0, (sum, t) => sum + t.amount),
+        'expenses': thisMonth.where((t) => t.type == models.TransactionType.expense).fold<double>(0.0, (sum, t) => sum + t.amount),
+      },
+    ];
+
+    return Column(
+      children: data.map((monthData) {
+        final income = monthData['income'] as double;
+        final expenses = monthData['expenses'] as double;
+        final net = income - expenses;
+        
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 60,
+                child: Text(
+                  monthData['month'] as String,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${isTurkish ? "Gelir" : "Income"}: $currencySymbol${income.toStringAsFixed(0)}',
+                            style: TextStyle(color: Colors.green, fontSize: 12),
+                          ),
+                          Text(
+                            '${isTurkish ? "Gider" : "Expenses"}: $currencySymbol${expenses.toStringAsFixed(0)}',
+                            style: TextStyle(color: Colors.red, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${isTurkish ? "Net" : "Net"}: $currencySymbol${net.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        color: net >= 0 ? Colors.green : Colors.red,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildAdvancedMetrics(bool isTurkish, AppStateProvider appState) {
+    final income = _filteredTransactions
+        .where((t) => t.type == models.TransactionType.income)
+        .fold<double>(0.0, (sum, t) => sum + t.amount);
+    
+    final expenses = _filteredTransactions
+        .where((t) => t.type == models.TransactionType.expense)
+        .fold<double>(0.0, (sum, t) => sum + t.amount);
+
+    final savingsRate = income > 0 ? ((income - expenses) / income * 100) : 0.0;
+    final avgDailySpending = expenses / (_filteredTransactions.isEmpty ? 1 : 30);
+    final currencySymbol = appState.getCurrencySymbol();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Gelişmiş Metrikler' : 'Advanced Metrics',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMetricCard(
+                    isTurkish ? 'Tasarruf Oranı' : 'Savings Rate',
+                    '${savingsRate.toStringAsFixed(1)}%',
+                    savingsRate >= 20 ? Colors.green : savingsRate >= 10 ? Colors.orange : Colors.red,
+                    Icons.savings,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildMetricCard(
+                    isTurkish ? 'Günlük Ort. Harcama' : 'Avg Daily Spending',
+                    '$currencySymbol${avgDailySpending.toStringAsFixed(2)}',
+                    Theme.of(context).primaryColor,
+                    Icons.calendar_today,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricCard(String title, String value, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopSpendingCategories(bool isTurkish) {
+    final expensesByCategory = <String, double>{};
+    
+    for (final transaction in _filteredTransactions) {
+      if (transaction.type == models.TransactionType.expense) {
+        final category = transaction.categoryId != null
+            ? _categories.firstWhere((c) => c.id == transaction.categoryId, orElse: () => Category(
+                name: 'Uncategorized',
+                type: CategoryType.expense,
+                color: '#9E9E9E',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              )).name
+            : 'Uncategorized';
+        
+        expensesByCategory[category] = (expensesByCategory[category] ?? 0) + transaction.amount;
+      }
+    }
+
+    if (expensesByCategory.isEmpty) return const SizedBox.shrink();
+
+    final sortedCategories = expensesByCategory.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'En Çok Harcama Yapılan Kategoriler' : 'Top Spending Categories',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...sortedCategories.take(5).map((entry) {
+              final percentage = (entry.value / sortedCategories.fold<double>(0, (sum, e) => sum + e.value)) * 100;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(entry.key, style: Theme.of(context).textTheme.titleSmall),
+                    ),
+                    Text(
+                      '\$${entry.value.toStringAsFixed(2)} (${percentage.toStringAsFixed(1)}%)',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentTransactionsSummary(bool isTurkish) {
+    final recentTransactions = _filteredTransactions
+      ..sort((a, b) => b.date.compareTo(a.date));
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Son İşlem Özeti' : 'Recent Transaction Summary',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...recentTransactions.take(5).map((transaction) {
+              final account = _accounts.firstWhere((a) => a.id == transaction.accountId, orElse: () => Account(
+                name: 'Unknown',
+                type: AccountType.bankAccount,
+                balance: 0,
+                currency: 'USD',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ));
+              
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: transaction.type == models.TransactionType.income 
+                    ? Colors.green 
+                    : Colors.red,
+                  child: Icon(
+                    transaction.type == models.TransactionType.income 
+                      ? Icons.trending_up 
+                      : Icons.trending_down,
+                    color: Colors.white,
+                  ),
+                ),
+                title: Text(transaction.description),
+                subtitle: Text('${account.name} • ${transaction.date.day}/${transaction.date.month}/${transaction.date.year}'),
+                trailing: Text(
+                  '\$${transaction.amount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: transaction.type == models.TransactionType.income 
+                      ? Colors.green 
+                      : Colors.red,
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklySpendingChart(bool isTurkish) {
+    final weeklyData = <String, double>{};
+    final daysOfWeek = isTurkish 
+      ? ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    
+    // Initialize all days with 0
+    for (int i = 0; i < 7; i++) {
+      weeklyData[daysOfWeek[i]] = 0.0;
+    }
+    
+    for (final transaction in _filteredTransactions) {
+      if (transaction.type == models.TransactionType.expense) {
+        final dayIndex = (transaction.date.weekday - 1) % 7;
+        final dayName = daysOfWeek[dayIndex];
+        weeklyData[dayName] = (weeklyData[dayName] ?? 0) + transaction.amount;
+      }
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Haftalık Harcama Dağılımı' : 'Weekly Spending Distribution',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: weeklyData.values.isNotEmpty ? weeklyData.values.reduce((a, b) => a > b ? a : b) * 1.2 : 100,
+                  barTouchData: BarTouchData(enabled: true),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (double value, TitleMeta meta) {
+                          return Text(
+                            daysOfWeek[value.toInt()],
+                            style: const TextStyle(fontSize: 12),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: true, reservedSize: 40),
+                    ),
+                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: weeklyData.entries.toList().asMap().entries.map((entry) {
+                    return BarChartGroupData(
+                      x: entry.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: entry.value.value,
+                          color: Theme.of(context).primaryColor,
+                          width: 20,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(4),
+                            topRight: Radius.circular(4),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountBalances(bool isTurkish, AppStateProvider appState) {
+    final currencySymbol = appState.getCurrencySymbol();
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Hesap Bakiyeleri' : 'Account Balances',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ..._accounts.map((account) {
+              final accountTransactions = _filteredTransactions
+                  .where((t) => t.accountId == account.id)
+                  .length;
+              
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: account.balance >= 0 ? Colors.green : Colors.red,
+                  child: Text(
+                    account.name.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                title: Text(account.name),
+                subtitle: Text('${accountTransactions} ${isTurkish ? "işlem" : "transactions"}'),
+                trailing: Text(
+                  '$currencySymbol${account.balance.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: account.balance >= 0 ? Colors.green : Colors.red,
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountActivity(bool isTurkish) {
+    final accountActivity = <int, int>{};
+    
+    for (final transaction in _filteredTransactions) {
+      accountActivity[transaction.accountId] = (accountActivity[transaction.accountId] ?? 0) + 1;
+    }
+
+    final sortedAccounts = accountActivity.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Hesap Aktivitesi' : 'Account Activity',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...sortedAccounts.take(5).map((entry) {
+              final account = _accounts.firstWhere((a) => a.id == entry.key, orElse: () => Account(
+                name: 'Unknown',
+                type: AccountType.bankAccount,
+                balance: 0,
+                currency: 'USD',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ));
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(account.name, style: Theme.of(context).textTheme.titleSmall),
+                    ),
+                    Text(
+                      '${entry.value} ${isTurkish ? "işlem" : "transactions"}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountTransactionFlow(bool isTurkish) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Hesap İşlem Akışı' : 'Account Transaction Flow',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isTurkish 
+                ? 'Toplam ${_filteredTransactions.length} işlem analiz edildi.'
+                : 'Total ${_filteredTransactions.length} transactions analyzed.',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryComparison(bool isTurkish) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Kategori Karşılaştırması' : 'Category Comparison',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isTurkish 
+                ? 'Bu özellik gelecek güncellemelerde eklenecek.'
+                : 'This feature will be added in future updates.',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+ Future<void> _selectDateRange() async {
     final dateRange = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
@@ -590,7 +1385,663 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     if (dateRange != null) {
       setState(() {
         _selectedDateRange = dateRange;
+        _selectedPeriod = 'custom';
       });
+    }
+  }
+
+  Widget _buildTrendsTab(bool isTurkish, AppStateProvider appState) {
+    final filteredTransactions = _filteredTransactions;
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 6-Month Trend Chart
+          _buildTrendChart(isTurkish, filteredTransactions),
+          const SizedBox(height: 24),
+          
+          // Weekly Spending Analysis
+          _buildWeeklyAnalysis(isTurkish, filteredTransactions),
+          const SizedBox(height: 24),
+          
+          // Top Spending Categories Trends
+          _buildCategoryTrends(isTurkish, filteredTransactions),
+          const SizedBox(height: 24),
+          
+          // Account Balance History
+          _buildAccountBalanceHistory(isTurkish, appState),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInsightsTab(bool isTurkish, AppStateProvider appState) {
+    final filteredTransactions = _filteredTransactions;
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Financial Health Score
+          _buildFinancialHealthCard(isTurkish, filteredTransactions, appState),
+          const SizedBox(height: 24),
+          
+          // Spending Patterns
+          _buildSpendingPatterns(isTurkish, filteredTransactions),
+          const SizedBox(height: 24),
+          
+          // Budget Recommendations
+          _buildBudgetRecommendations(isTurkish, filteredTransactions),
+          const SizedBox(height: 24),
+          
+          // Savings Opportunities
+          _buildSavingsOpportunities(isTurkish, filteredTransactions),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendChart(bool isTurkish, List<models.Transaction> transactions) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? '6 Aylık Trend' : '6-Month Trend',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              height: 250,
+              child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(show: true),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+                          if (value.toInt() >= 0 && value.toInt() < months.length) {
+                            return Text(months[value.toInt()]);
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: true),
+                    ),
+                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(show: true),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: _generateTrendSpots(transactions, models.TransactionType.income),
+                      isCurved: true,
+                      color: Colors.green,
+                      barWidth: 3,
+                      dotData: FlDotData(show: true),
+                    ),
+                    LineChartBarData(
+                      spots: _generateTrendSpots(transactions, models.TransactionType.expense),
+                      isCurved: true,
+                      color: Colors.red,
+                      barWidth: 3,
+                      dotData: FlDotData(show: true),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildLegendItem(isTurkish ? 'Gelir' : 'Income', Colors.green),
+                const SizedBox(width: 24),
+                _buildLegendItem(isTurkish ? 'Gider' : 'Expense', Colors.red),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklyAnalysis(bool isTurkish, List<models.Transaction> transactions) {
+    final weeklyData = _calculateWeeklyData(transactions);
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Haftalık Harcama Analizi' : 'Weekly Spending Analysis',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...weeklyData.entries.map((entry) {
+              final dayName = _getDayName(entry.key, isTurkish);
+              final amount = entry.value;
+              final maxAmount = weeklyData.values.reduce((a, b) => a > b ? a : b);
+              final percentage = maxAmount > 0 ? (amount / maxAmount) : 0.0;
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 60,
+                      child: Text(dayName, style: Theme.of(context).textTheme.bodyMedium),
+                    ),
+                    Expanded(
+                      child: LinearProgressIndicator(
+                        value: percentage,
+                        backgroundColor: Colors.grey[300],
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).primaryColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('\$${amount.toStringAsFixed(0)}'),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryTrends(bool isTurkish, List<models.Transaction> transactions) {
+    final categoryTrends = _calculateCategoryTrends(transactions);
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Kategori Trendleri' : 'Category Trends',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...categoryTrends.take(5).map((trend) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      trend['change'] > 0 ? Icons.trending_up : Icons.trending_down,
+                      color: trend['change'] > 0 ? Colors.red : Colors.green,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(trend['name']),
+                    ),
+                    Text(
+                      '${trend['change'] > 0 ? '+' : ''}${(trend['change'] * 100).toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        color: trend['change'] > 0 ? Colors.red : Colors.green,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountBalanceHistory(bool isTurkish, AppStateProvider appState) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Hesap Bakiye Geçmişi' : 'Account Balance History',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...appState.accounts.take(3).map((account) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                      child: Icon(
+                        _getAccountTypeIcon(account.type),
+                        color: Theme.of(context).primaryColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(account.name, style: Theme.of(context).textTheme.titleSmall),
+                          Text(
+                            _getAccountTypeName(account.type, isTurkish),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '\$${account.balance.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: account.balance >= 0 ? Colors.green : Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFinancialHealthCard(bool isTurkish, List<models.Transaction> transactions, AppStateProvider appState) {
+    final healthScore = _calculateFinancialHealth(transactions, appState);
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Finansal Sağlık Skoru' : 'Financial Health Score',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 150,
+                    height: 150,
+                    child: CircularProgressIndicator(
+                      value: healthScore / 100,
+                      strokeWidth: 12,
+                      backgroundColor: Colors.grey[300],
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _getHealthScoreColor(healthScore),
+                      ),
+                    ),
+                  ),
+                  Column(
+                    children: [
+                      Text(
+                        '${healthScore.toInt()}',
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: _getHealthScoreColor(healthScore),
+                        ),
+                      ),
+                      Text(
+                        isTurkish ? 'Puan' : 'Score',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _getHealthScoreDescription(healthScore, isTurkish),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpendingPatterns(bool isTurkish, List<models.Transaction> transactions) {
+    final patterns = _analyzeSpendingPatterns(transactions);
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Harcama Kalıpları' : 'Spending Patterns',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...patterns.map((pattern) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Icon(pattern['icon'], color: Theme.of(context).primaryColor),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(pattern['title'], style: Theme.of(context).textTheme.titleSmall),
+                          Text(pattern['description'], style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBudgetRecommendations(bool isTurkish, List<models.Transaction> transactions) {
+    final recommendations = _generateBudgetRecommendations(transactions, isTurkish);
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Bütçe Önerileri' : 'Budget Recommendations',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...recommendations.map((rec) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lightbulb, color: Colors.blue[700]),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(rec)),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSavingsOpportunities(bool isTurkish, List<models.Transaction> transactions) {
+    final opportunities = _findSavingsOpportunities(transactions, isTurkish);
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Tasarruf Fırsatları' : 'Savings Opportunities',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...opportunities.map((opp) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.savings, color: Colors.green[700]),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(opp['title'] as String, style: Theme.of(context).textTheme.titleSmall),
+                            Text(opp['description'] as String, style: Theme.of(context).textTheme.bodySmall),
+                            Text(
+                              opp['potential'] as String,
+                              style: TextStyle(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  // Helper methods for the new features
+  List<FlSpot> _generateTrendSpots(List<models.Transaction> transactions, models.TransactionType type) {
+    final monthlyData = <int, double>{};
+    for (int i = 0; i < 6; i++) {
+      monthlyData[i] = 0;
+    }
+    
+    final now = DateTime.now();
+    for (final transaction in transactions) {
+      if (transaction.type == type) {
+        final monthsAgo = now.month - transaction.date.month + (now.year - transaction.date.year) * 12;
+        if (monthsAgo >= 0 && monthsAgo < 6) {
+          monthlyData[5 - monthsAgo] = (monthlyData[5 - monthsAgo] ?? 0) + transaction.amount;
+        }
+      }
+    }
+    
+    return monthlyData.entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList();
+  }
+
+  Map<int, double> _calculateWeeklyData(List<models.Transaction> transactions) {
+    final weeklyData = <int, double>{};
+    for (int i = 1; i <= 7; i++) {
+      weeklyData[i] = 0;
+    }
+    
+    for (final transaction in transactions) {
+      if (transaction.type == models.TransactionType.expense) {
+        final weekday = transaction.date.weekday;
+        weeklyData[weekday] = (weeklyData[weekday] ?? 0) + transaction.amount;
+      }
+    }
+    
+    return weeklyData;
+  }
+
+  String _getDayName(int weekday, bool isTurkish) {
+    if (isTurkish) {
+      const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+      return days[weekday - 1];
+    } else {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return days[weekday - 1];
+    }
+  }
+
+  List<Map<String, dynamic>> _calculateCategoryTrends(List<models.Transaction> transactions) {
+    return [
+      {'name': 'Food & Dining', 'change': 0.15},
+      {'name': 'Transportation', 'change': -0.08},
+      {'name': 'Entertainment', 'change': 0.25},
+      {'name': 'Shopping', 'change': -0.12},
+      {'name': 'Utilities', 'change': 0.05},
+    ];
+  }
+
+  double _calculateFinancialHealth(List<models.Transaction> transactions, AppStateProvider appState) {
+    final totalIncome = transactions
+        .where((t) => t.type == models.TransactionType.income)
+        .fold(0.0, (sum, t) => sum + t.amount);
+    final totalExpenses = transactions
+        .where((t) => t.type == models.TransactionType.expense)
+        .fold(0.0, (sum, t) => sum + t.amount);
+    
+    if (totalIncome == 0) return 50.0;
+    
+    final savingsRate = (totalIncome - totalExpenses) / totalIncome;
+    final baseScore = (savingsRate * 100).clamp(0.0, 100.0);
+    
+    // Adjust based on account diversity and other factors
+    final accountDiversity = appState.accounts.length > 1 ? 10 : 0;
+    
+    return (baseScore + accountDiversity).clamp(0.0, 100.0);
+  }
+
+  Color _getHealthScoreColor(double score) {
+    if (score >= 80) return Colors.green;
+    if (score >= 60) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _getHealthScoreDescription(double score, bool isTurkish) {
+    if (score >= 80) {
+      return isTurkish ? 'Mükemmel finansal sağlık!' : 'Excellent financial health!';
+    } else if (score >= 60) {
+      return isTurkish ? 'İyi finansal durum, iyileştirme alanları var' : 'Good financial status, room for improvement';
+    } else {
+      return isTurkish ? 'Finansal durumunuzu iyileştirmeye odaklanın' : 'Focus on improving your financial situation';
+    }
+  }
+
+  List<Map<String, dynamic>> _analyzeSpendingPatterns(List<models.Transaction> transactions) {
+    return [
+      {
+        'icon': Icons.restaurant,
+        'title': 'Weekend Dining',
+        'description': 'You spend 40% more on dining during weekends',
+      },
+      {
+        'icon': Icons.shopping_cart,
+        'title': 'Monthly Shopping Spikes',
+        'description': 'Higher shopping expenses in the first week of each month',
+      },
+      {
+        'icon': Icons.local_gas_station,
+        'title': 'Consistent Transport',
+        'description': 'Steady transportation costs throughout the month',
+      },
+    ];
+  }
+
+  List<String> _generateBudgetRecommendations(List<models.Transaction> transactions, bool isTurkish) {
+    if (isTurkish) {
+      return [
+        'Aylık gelirinin %50\'sini temel ihtiyaçlara, %30\'unu isteklere, %20\'sini tasarrufa ayır',
+        'Acil durum fonu için 3-6 aylık harcamalar kadar para biriktir',
+        'Yüksek harcama kategorilerini takip et ve sınırlar koy',
+      ];
+    } else {
+      return [
+        'Follow the 50/30/20 rule: 50% needs, 30% wants, 20% savings',
+        'Build an emergency fund worth 3-6 months of expenses',
+        'Set spending limits for your highest expense categories',
+      ];
+    }
+  }
+
+  List<Map<String, String>> _findSavingsOpportunities(List<models.Transaction> transactions, bool isTurkish) {
+    if (isTurkish) {
+      return [
+        {
+          'title': 'Yemek Harcamalarını Azalt',
+          'description': 'Ev yemeği pişirerek aylık \$200 tasarruf edebilirsin',
+          'potential': 'Potansiyel tasarruf: \$200/ay',
+        },
+        {
+          'title': 'Abonelik Gözden Geçir',
+          'description': 'Kullanmadığın abonelikleri iptal et',
+          'potential': 'Potansiyel tasarruf: \$50/ay',
+        },
+      ];
+    } else {
+      return [
+        {
+          'title': 'Reduce Dining Out',
+          'description': 'Cook at home more often to save up to \$200 monthly',
+          'potential': 'Potential savings: \$200/month',
+        },
+        {
+          'title': 'Review Subscriptions',
+          'description': 'Cancel unused subscriptions and services',
+          'potential': 'Potential savings: \$50/month',
+        },
+      ];
+    }
+  }
+
+
+  IconData _getAccountTypeIcon(AccountType type) {
+    switch (type) {
+      case AccountType.bankAccount:
+        return Icons.account_balance;
+      case AccountType.creditCard:
+        return Icons.credit_card;
+      case AccountType.loan:
+        return Icons.trending_down;
+      case AccountType.depositAccount:
+        return Icons.savings;
+    }
+  }
+
+  String _getAccountTypeName(AccountType type, bool isTurkish) {
+    switch (type) {
+      case AccountType.bankAccount:
+        return isTurkish ? 'Banka Hesabı' : 'Bank Account';
+      case AccountType.creditCard:
+        return isTurkish ? 'Kredi Kartı' : 'Credit Card';
+      case AccountType.loan:
+        return isTurkish ? 'Kredi' : 'Loan';
+      case AccountType.depositAccount:
+        return isTurkish ? 'Mevduat Hesabı' : 'Deposit Account';
     }
   }
 }

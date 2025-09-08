@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_theme.dart';
 import '../providers/app_state_provider.dart';
+import '../models/category.dart';
+import '../models/app_theme_template.dart';
+import '../widgets/category_management_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -113,6 +116,245 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setString('currency', currency);
   }
 
+  void _showThemeDialog() {
+    final appState = context.read<AppStateProvider>();
+    final isTurkish = appState.selectedLanguage == 'Turkish';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isTurkish ? 'Tasarım Şablonu Seç' : 'Select Design Template'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: ListView.builder(
+            itemCount: AppThemeTemplates.templates.length,
+            itemBuilder: (context, index) {
+              final template = AppThemeTemplates.templates[index];
+              final isSelected = template.id == appState.selectedThemeId;
+              
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [template.primaryColor, template.secondaryColor],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  title: Text(isTurkish ? template.nameTr : template.nameEn),
+                  subtitle: Text(template.description),
+                  trailing: isSelected
+                    ? Icon(Icons.check_circle, color: template.primaryColor)
+                    : null,
+                  onTap: () {
+                    appState.updateTheme(template.id);
+                    _saveThemeToPrefs(template.id);
+                    Navigator.of(context).pop();
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(isTurkish ? 'Kapat' : 'Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveThemeToPrefs(String themeId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme', themeId);
+  }
+
+  Future<void> _saveDarkModeToPrefs(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('darkMode', isDark);
+  }
+
+  void _showCategoryManagement(CategoryType categoryType) {
+    final appState = context.read<AppStateProvider>();
+    final categories = appState.getCategoriesByType(categoryType);
+    final isTurkish = appState.selectedLanguage == 'Turkish';
+    
+    String getTypeTitle() {
+      switch (categoryType) {
+        case CategoryType.income:
+          return isTurkish ? 'Gelir Kategorileri' : 'Income Categories';
+        case CategoryType.expense:
+          return isTurkish ? 'Gider Kategorileri' : 'Expense Categories';
+        case CategoryType.billSubscription:
+          return isTurkish ? 'Fatura Kategorileri' : 'Bills Categories';
+      }
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(getTypeTitle()),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 300,
+                child: categories.isEmpty
+                  ? Center(
+                      child: Text(
+                        isTurkish 
+                          ? 'Henüz kategori eklenmemiş' 
+                          : 'No categories added yet',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.grey,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: categories.length,
+                      itemBuilder: (context, index) {
+                        final category = categories[index];
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Color(
+                                int.parse(category.color.substring(1), radix: 16) + 0xFF000000
+                              ),
+                              radius: 12,
+                            ),
+                            title: Text(category.name),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () async {
+                                    Navigator.of(context).pop();
+                                    final result = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => CategoryManagementDialog(
+                                        category: category,
+                                        categoryType: categoryType,
+                                      ),
+                                    );
+                                    if (result == true) {
+                                      _showCategoryManagement(categoryType);
+                                    }
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => _deleteCategory(category),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(isTurkish ? 'Kapat' : 'Close'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              final result = await showDialog<bool>(
+                context: context,
+                builder: (context) => CategoryManagementDialog(
+                  categoryType: categoryType,
+                ),
+              );
+              if (result == true) {
+                _showCategoryManagement(categoryType);
+              }
+            },
+            child: Text(isTurkish ? 'Yeni Ekle' : 'Add New'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteCategory(Category category) async {
+    final appState = context.read<AppStateProvider>();
+    final isTurkish = appState.selectedLanguage == 'Turkish';
+    
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isTurkish ? 'Kategoriyi Sil' : 'Delete Category'),
+        content: Text(
+          isTurkish 
+            ? '${category.name} kategorisini silmek istediğinizden emin misiniz?'
+            : 'Are you sure you want to delete the ${category.name} category?'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(isTurkish ? 'İptal' : 'Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              isTurkish ? 'Sil' : 'Delete',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirm == true && category.id != null) {
+      try {
+        await appState.deleteCategory(category.id!);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isTurkish 
+                  ? 'Kategori başarıyla silindi' 
+                  : 'Category deleted successfully'
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isTurkish 
+                  ? 'Kategori silinirken hata oluştu' 
+                  : 'Error deleting category'
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppStateProvider>(
@@ -121,7 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final selectedCurrency = appState.selectedCurrency;
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(selectedLanguage == 'Turkish' ? 'Ayarlar' : 'Settings'),
         backgroundColor: Colors.transparent,
@@ -138,7 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   CircleAvatar(
                     radius: 30,
-                    backgroundColor: AppTheme.primaryColor,
+                    backgroundColor: appState.selectedTheme.primaryColor,
                     child: const Icon(
                       Icons.person,
                       size: 32,
@@ -159,7 +401,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ? 'Kişisel Finans Yöneticisi' 
                               : 'Personal Finance Manager',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppTheme.textSecondary,
+                                color: Theme.of(context).textTheme.bodySmall?.color,
                               ),
                         ),
                       ],
@@ -173,13 +415,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: AppSpacing.lg),
           
           // Language & Currency Section
-          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Dil ve Para Birimi' : 'Language & Currency'),
-          
+          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Dil ve Para Birimi' : 'Language & Currency', appState),
+
           _buildSettingItem(
             icon: Icons.language,
             title: selectedLanguage == 'Turkish' ? 'Dil' : 'Language',
             subtitle: selectedLanguage == 'Turkish' ? 'Türkçe' : 'English',
             onTap: _showLanguageDialog,
+            appState: appState,
           ),
           
           _buildSettingItem(
@@ -187,12 +430,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: selectedLanguage == 'Turkish' ? 'Para Birimi' : 'Currency',
             subtitle: selectedCurrency,
             onTap: _showCurrencyDialog,
+            appState: appState,
+          ),
+          
+          _buildSettingItem(
+            icon: Icons.palette,
+            title: selectedLanguage == 'Turkish' ? 'Tasarım Şablonu' : 'Design Template',
+            subtitle: selectedLanguage == 'Turkish' 
+                ? appState.selectedTheme.nameTr 
+                : appState.selectedTheme.nameEn,
+            onTap: _showThemeDialog,
+            appState: appState,
+          ),
+          
+          const SizedBox(height: AppSpacing.lg),
+          
+          // Category Management Section
+          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Kategori Yönetimi' : 'Category Management', appState),
+          
+          _buildSettingItem(
+            icon: Icons.trending_up,
+            title: selectedLanguage == 'Turkish' ? 'Gelir Kategorileri' : 'Income Categories',
+            subtitle: selectedLanguage == 'Turkish' 
+                ? 'Gelir kategorilerini yönet' 
+                : 'Manage income categories',
+            onTap: () => _showCategoryManagement(CategoryType.income),
+            appState: appState,
+          ),
+          
+          _buildSettingItem(
+            icon: Icons.trending_down,
+            title: selectedLanguage == 'Turkish' ? 'Gider Kategorileri' : 'Expense Categories',
+            subtitle: selectedLanguage == 'Turkish' 
+                ? 'Gider kategorilerini yönet' 
+                : 'Manage expense categories',
+            onTap: () => _showCategoryManagement(CategoryType.expense),
+            appState: appState,
+          ),
+          
+          _buildSettingItem(
+            icon: Icons.receipt_long,
+            title: selectedLanguage == 'Turkish' ? 'Fatura Kategorileri' : 'Bills Categories',
+            subtitle: selectedLanguage == 'Turkish' 
+                ? 'Fatura kategorilerini yönet' 
+                : 'Manage bills categories',
+            onTap: () => _showCategoryManagement(CategoryType.billSubscription),
+            appState: appState,
           ),
           
           const SizedBox(height: AppSpacing.lg),
           
           // Preferences Section
-          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Tercihler' : 'Preferences'),
+          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Tercihler' : 'Preferences', appState),
           
           _buildSwitchItem(
             icon: Icons.notifications,
@@ -207,6 +496,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               });
               _saveSettings();
             },
+            appState: appState,
           ),
           
           _buildSwitchItem(
@@ -215,28 +505,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: selectedLanguage == 'Turkish' 
                 ? 'Koyu renkli arayüz kullan' 
                 : 'Use dark color theme',
-            value: _darkModeEnabled,
+            value: appState.isDarkMode,
             onChanged: (value) {
-              setState(() {
-                _darkModeEnabled = value;
-              });
-              _saveSettings();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    selectedLanguage == 'Turkish' 
-                        ? 'Karanlık tema desteği yakında gelecek!' 
-                        : 'Dark theme support coming soon!'
-                  ),
-                ),
-              );
+              appState.updateDarkMode(value);
+              _saveDarkModeToPrefs(value);
             },
+            appState: appState,
           ),
           
           const SizedBox(height: AppSpacing.lg),
           
           // Data & Privacy Section
-          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Veri ve Gizlilik' : 'Data & Privacy'),
+          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Veri ve Gizlilik' : 'Data & Privacy', appState),
           
           _buildSettingItem(
             icon: Icons.backup,
@@ -255,6 +535,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
+            appState: appState,
           ),
           
           _buildSettingItem(
@@ -274,12 +555,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
+            appState: appState,
           ),
           
           const SizedBox(height: AppSpacing.lg),
           
           // About Section
-          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Hakkında' : 'About'),
+          _buildSectionHeader(selectedLanguage == 'Turkish' ? 'Hakkında' : 'About', appState),
           
           _buildSettingItem(
             icon: Icons.info,
@@ -292,7 +574,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 applicationVersion: '1.0.0',
                 applicationIcon: Icon(
                   Icons.account_balance_wallet,
-                  color: AppTheme.primaryColor,
+                  color: appState.selectedTheme.primaryColor,
                   size: 48,
                 ),
                 children: [
@@ -304,6 +586,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               );
             },
+            appState: appState,
           ),
           
           _buildSettingItem(
@@ -323,6 +606,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
+            appState: appState,
           ),
           
           const SizedBox(height: AppSpacing.xxl),
@@ -333,7 +617,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  Widget _buildSectionHeader(String title, AppStateProvider appState) {
     return Padding(
       padding: const EdgeInsets.only(
         left: AppSpacing.sm,
@@ -342,7 +626,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: AppTheme.primaryColor,
+              color: appState.selectedTheme.primaryColor,
               fontWeight: FontWeight.w600,
             ),
       ),
@@ -354,13 +638,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    required AppStateProvider appState,
   }) {
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-          child: Icon(icon, color: AppTheme.primaryColor),
+          backgroundColor: appState.selectedTheme.primaryColor.withOpacity(0.1),
+          child: Icon(icon, color: appState.selectedTheme.primaryColor),
         ),
         title: Text(title),
         subtitle: Text(subtitle),
@@ -376,20 +661,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String subtitle,
     required bool value,
     required ValueChanged<bool> onChanged,
+    required AppStateProvider appState,
   }) {
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-          child: Icon(icon, color: AppTheme.primaryColor),
+          backgroundColor: appState.selectedTheme.primaryColor.withOpacity(0.1),
+          child: Icon(icon, color: appState.selectedTheme.primaryColor),
         ),
         title: Text(title),
         subtitle: Text(subtitle),
         trailing: Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: AppTheme.primaryColor,
+          activeColor: appState.selectedTheme.primaryColor,
         ),
       ),
     );

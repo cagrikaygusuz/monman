@@ -109,7 +109,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppTheme.secondaryColor,
+        backgroundColor: Colors.green,
       ),
     );
   }
@@ -118,7 +118,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppTheme.errorColor,
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -173,7 +173,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
             .toList();
 
         return Scaffold(
-          backgroundColor: AppTheme.backgroundColor,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
             title: Text(selectedLanguage == 'Turkish' ? 'İşlemler' : 'Transactions'),
             backgroundColor: Colors.transparent,
@@ -207,7 +207,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
                 ),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _showAddTransactionDialog(context),
-            backgroundColor: AppTheme.primaryColor,
+            backgroundColor: appState.selectedTheme.primaryColor,
+            heroTag: "transactions_fab",
             child: const Icon(Icons.add, color: Colors.white),
           ),
         );
@@ -257,7 +258,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
               child: Text(
                 dateKey,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppTheme.textSecondary,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                       fontWeight: FontWeight.w600,
                     ),
               ),
@@ -322,86 +323,221 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
     final isIncome = transaction.type == models.TransactionType.income;
     final isExpense = transaction.type == models.TransactionType.expense;
     final isTransfer = transaction.type == models.TransactionType.transfer;
+    final isTurkish = selectedLanguage == 'Turkish';
     
     final currencySymbol = context.read<AppStateProvider>().getCurrencySymbol();
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: isIncome
-                  ? AppTheme.secondaryColor.withOpacity(0.1)
-                  : isExpense
-                      ? AppTheme.errorColor.withOpacity(0.1)
-                      : AppTheme.warningColor.withOpacity(0.1),
-              child: Icon(
-                isIncome
-                    ? Icons.add_circle_outline
+      child: InkWell(
+        onLongPress: () => _showTransactionOptions(context, transaction, isTurkish),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: isIncome
+                    ? Colors.green.withOpacity(0.1)
                     : isExpense
-                        ? Icons.remove_circle_outline
-                        : Icons.swap_horiz,
-                color: isIncome
-                    ? AppTheme.secondaryColor
-                    : isExpense
-                        ? AppTheme.errorColor
-                        : AppTheme.warningColor,
+                        ? Colors.red.withOpacity(0.1)
+                        : Colors.amber.withOpacity(0.1),
+                child: Icon(
+                  isIncome
+                      ? Icons.add_circle_outline
+                      : isExpense
+                          ? Icons.remove_circle_outline
+                          : Icons.swap_horiz,
+                  color: isIncome
+                      ? Colors.green
+                      : isExpense
+                          ? Colors.red
+                          : Colors.amber,
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    transaction.description,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    account.name,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.textSecondary,
-                        ),
-                  ),
-                  if (isTransfer && transaction.toAccountId != null) ...[
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      '${selectedLanguage == 'Turkish' ? 'Alıcı' : 'To'}: ${accounts.firstWhere((a) => a.id == transaction.toAccountId).name}',
+                      transaction.description,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      account.name,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.textSecondary,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
                     ),
+                    if (isTransfer && transaction.toAccountId != null) ...[
+                      Text(
+                        '${isTurkish ? 'Alıcı' : 'To'}: ${accounts.firstWhere((a) => a.id == transaction.toAccountId).name}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
+                      ),
+                    ],
                   ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${isExpense ? '-' : '+'}$currencySymbol${transaction.amount.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: isIncome
+                              ? Colors.green
+                              : isExpense
+                                  ? Colors.red
+                                  : Colors.amber,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  Text(
+                    '${transaction.date.hour.toString().padLeft(2, '0')}:${transaction.date.minute.toString().padLeft(2, '0')}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                  ),
                 ],
               ),
+              IconButton(
+                icon: const Icon(Icons.more_vert, size: 20),
+                onPressed: () => _showTransactionOptions(context, transaction, isTurkish),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTransactionOptions(BuildContext context, models.Transaction transaction, bool isTurkish) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: Text(
+                isTurkish ? 'İşlemi Sil' : 'Delete Transaction',
+                style: const TextStyle(color: Colors.red),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _showDeleteConfirmationDialog(context, transaction, isTurkish);
+              },
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '${isExpense ? '-' : '+'}$currencySymbol${transaction.amount.toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: isIncome
-                            ? AppTheme.secondaryColor
-                            : isExpense
-                                ? AppTheme.errorColor
-                                : AppTheme.warningColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                Text(
-                  '${transaction.date.hour.toString().padLeft(2, '0')}:${transaction.date.minute.toString().padLeft(2, '0')}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textSecondary,
-                      ),
-                ),
-              ],
+            ListTile(
+              leading: const Icon(Icons.cancel),
+              title: Text(isTurkish ? 'İptal' : 'Cancel'),
+              onTap: () => Navigator.pop(context),
             ),
           ],
         ),
       ),
     );
+  }
+
+  void _showDeleteConfirmationDialog(BuildContext context, models.Transaction transaction, bool isTurkish) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isTurkish ? 'İşlemi Sil' : 'Delete Transaction'),
+        content: Text(
+          isTurkish 
+            ? 'Bu işlemi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.'
+            : 'Are you sure you want to delete this transaction? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(isTurkish ? 'İptal' : 'Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deleteTransaction(context, transaction, isTurkish);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(isTurkish ? 'Sil' : 'Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteTransaction(BuildContext context, models.Transaction transaction, bool isTurkish) async {
+    try {
+      final appState = context.read<AppStateProvider>();
+      
+      // First, revert the account balance changes
+      final account = appState.accounts.firstWhere((a) => a.id == transaction.accountId);
+      double newBalance = account.balance;
+      
+      switch (transaction.type) {
+        case models.TransactionType.income:
+          // Remove the income from balance
+          newBalance -= transaction.amount;
+          break;
+        case models.TransactionType.expense:
+          // Add back the expense to balance
+          newBalance += transaction.amount;
+          break;
+        case models.TransactionType.transfer:
+          if (transaction.toAccountId != null) {
+            // Revert transfer: add back to source account
+            final updatedFromAccount = account.copyWith(
+              balance: newBalance + transaction.amount,
+              updatedAt: DateTime.now(),
+            );
+            await appState.updateAccount(updatedFromAccount);
+            
+            // Revert transfer: subtract from destination account
+            final toAccount = appState.accounts.firstWhere((a) => a.id == transaction.toAccountId);
+            final updatedToAccount = toAccount.copyWith(
+              balance: toAccount.balance - transaction.amount,
+              updatedAt: DateTime.now(),
+            );
+            await appState.updateAccount(updatedToAccount);
+            
+            // Delete the transaction
+            await appState.deleteTransaction(transaction.id!);
+            
+            if (context.mounted) {
+              _showSuccessSnackBar(context, isTurkish ? 'İşlem başarıyla silindi' : 'Transaction deleted successfully');
+            }
+            return;
+          }
+          break;
+      }
+      
+      // Update the account balance for income/expense
+      final updatedAccount = account.copyWith(
+        balance: newBalance,
+        updatedAt: DateTime.now(),
+      );
+      await appState.updateAccount(updatedAccount);
+      
+      // Delete the transaction
+      await appState.deleteTransaction(transaction.id!);
+      
+      if (context.mounted) {
+        _showSuccessSnackBar(context, isTurkish ? 'İşlem başarıyla silindi' : 'Transaction deleted successfully');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        _showErrorSnackBar(context, isTurkish ? 'İşlem silinirken hata oluştu: $e' : 'Error deleting transaction: $e');
+      }
+    }
   }
 
   void _showFilterDialog(BuildContext context, List<Account> accounts, List<Category> categories) {

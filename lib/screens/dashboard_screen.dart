@@ -4,17 +4,22 @@ import '../constants/app_theme.dart';
 import '../providers/app_state_provider.dart';
 import '../widgets/financial_summary_card.dart';
 import '../widgets/accounts_summary_card.dart';
+import '../widgets/add_transaction_dialog.dart';
+import '../widgets/add_account_dialog.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
-  String _getGreeting() {
+  
+  String _getGreeting(String language) {
     final hour = DateTime.now().hour;
+    final isTurkish = language == 'Turkish';
+    
     if (hour < 12) {
-      return 'Good Morning!';
+      return isTurkish ? 'Günaydın!' : 'Good Morning!';
     } else if (hour < 17) {
-      return 'Good Afternoon!';
+      return isTurkish ? 'İyi Öğleden Sonralar!' : 'Good Afternoon!';
     } else {
-      return 'Good Evening!';
+      return isTurkish ? 'İyi Akşamlar!' : 'Good Evening!';
     }
   }
 
@@ -22,13 +27,16 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppStateProvider>(
       builder: (context, appState, child) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+        final selectedLanguage = appState.selectedLanguage;
+        final isTurkish = selectedLanguage == 'Turkish';
+        
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: Text(isTurkish ? 'Özet' : 'Dashboard'),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+          ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -42,8 +50,8 @@ class DashboardScreen extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppTheme.primaryColor,
-                    AppTheme.primaryColor.withOpacity(0.8),
+                    appState.selectedTheme.primaryColor,
+                    appState.selectedTheme.primaryColor.withOpacity(0.8),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -52,7 +60,7 @@ class DashboardScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _getGreeting(),
+                    _getGreeting(selectedLanguage),
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -60,7 +68,9 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Welcome to your financial overview',
+                    isTurkish 
+                        ? 'Finansal genel bakışınıza hoş geldiniz'
+                        : 'Welcome to your financial overview',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Colors.white.withOpacity(0.9),
                         ),
@@ -83,12 +93,12 @@ class DashboardScreen extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.tips_and_updates_outlined,
-                          color: AppTheme.warningColor,
+                          color: Colors.amber,
                           size: 24,
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         Text(
-                          'Quick Actions',
+                          isTurkish ? 'Hızlı İşlemler' : 'Quick Actions',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                       ],
@@ -99,11 +109,11 @@ class DashboardScreen extends StatelessWidget {
                         Expanded(
                           child: _buildQuickActionButton(
                             context,
-                            'Add Transaction',
+                            isTurkish ? 'İşlem Ekle' : 'Add Transaction',
                             Icons.add_circle_outline,
-                            AppTheme.primaryColor,
+                            appState.selectedTheme.primaryColor,
                             () {
-                              // TODO: Navigate to add transaction
+                              _showAddTransactionDialog(context, appState);
                             },
                           ),
                         ),
@@ -111,11 +121,11 @@ class DashboardScreen extends StatelessWidget {
                         Expanded(
                           child: _buildQuickActionButton(
                             context,
-                            'Add Account',
+                            isTurkish ? 'Hesap Ekle' : 'Add Account',
                             Icons.account_balance_wallet_outlined,
-                            AppTheme.secondaryColor,
+                            appState.selectedTheme.secondaryColor,
                             () {
-                              // TODO: Navigate to add account
+                              _showAddAccountDialog(context, appState);
                             },
                           ),
                         ),
@@ -130,6 +140,23 @@ class DashboardScreen extends StatelessWidget {
       ),
     );
       },
+    );
+  }
+
+  void _showAddTransactionDialog(BuildContext context, AppStateProvider appState) {
+    showDialog(
+      context: context,
+      builder: (context) => AddTransactionDialog(
+        accounts: appState.accounts,
+        categories: appState.categories,
+      ),
+    );
+  }
+
+  void _showAddAccountDialog(BuildContext context, AppStateProvider appState) {
+    showDialog(
+      context: context,
+      builder: (context) => const AddAccountDialog(),
     );
   }
 

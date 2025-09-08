@@ -25,7 +25,7 @@ class MonManApp extends StatelessWidget {
         builder: (context, appState, child) {
           return MaterialApp(
             title: 'MonMan - Personal Finance Manager',
-            theme: AppTheme.lightTheme,
+            theme: appState.themeData,
             debugShowCheckedModeBanner: false,
             home: const MainNavigation(),
           );

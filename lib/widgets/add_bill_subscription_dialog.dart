@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../constants/app_theme.dart';
 import '../models/bill_subscription.dart';
 import '../models/account.dart';
 import '../models/category.dart';
+import '../providers/app_state_provider.dart';
 
 class AddBillSubscriptionDialog extends StatefulWidget {
   final List<Account> accounts;
   final List<Category> categories;
   final BillSubscription? item;
+  final BillSubscription? billSubscription;
+
 
   const AddBillSubscriptionDialog({
     super.key,
     required this.accounts,
     required this.categories,
     this.item,
+    this.billSubscription,
   });
 
   @override
@@ -108,57 +113,65 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
+    return Consumer<AppStateProvider>(
+      builder: (context, appState, child) {
+        final selectedLanguage = appState.selectedLanguage;
+        final isTurkish = selectedLanguage == 'Turkish';
+        final currencySymbol = appState.getCurrencySymbol();
+
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.receipt_long_outlined,
-                  color: AppTheme.primaryColor,
-                  size: 28,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.receipt_long_outlined,
+                      color: appState.selectedTheme.primaryColor,
+                      size: 28,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      _isEditing 
+                          ? (isTurkish ? 'Öğeyi Düzenle' : 'Edit Item')
+                          : (isTurkish ? 'Fatura veya Abonelik Ekle' : 'Add Bill or Subscription'),
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  _isEditing ? 'Edit Item' : 'Add Bill or Subscription',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                const SizedBox(height: AppSpacing.md),
+                TabBar(
+                  controller: _tabController,
+                  onTap: _onTabChanged,
+                  tabs: [
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.receipt, size: 16),
+                          const SizedBox(width: 4),
+                          Text(isTurkish ? 'Fatura' : 'Bill'),
+                        ],
+                      ),
+                    ),
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.refresh, size: 16),
+                          const SizedBox(width: 4),
+                          Text(isTurkish ? 'Abonelik' : 'Subscription'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TabBar(
-              controller: _tabController,
-              onTap: _onTabChanged,
-              tabs: const [
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.receipt, size: 16),
-                      SizedBox(width: 4),
-                      Text('Bill'),
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.refresh, size: 16),
-                      SizedBox(width: 4),
-                      Text('Subscription'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: AppSpacing.md),
             Expanded(
               child: Form(
@@ -166,111 +179,112 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      // Name Field
-                      TextFormField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Name',
-                          hintText: 'Enter bill/subscription name',
-                          prefixIcon: Icon(Icons.label_outline),
-                        ),
-                        textCapitalization: TextCapitalization.words,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter a name';
-                          }
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: AppSpacing.md),
-
-                      // Amount Field
-                      TextFormField(
-                        controller: _amountController,
-                        decoration: const InputDecoration(
-                          labelText: 'Amount',
-                          hintText: '0.00',
-                          prefixIcon: Icon(Icons.attach_money),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-                        ],
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter an amount';
-                          }
-                          final amount = double.tryParse(value);
-                          if (amount == null || amount <= 0) {
-                            return 'Please enter a valid amount greater than 0';
-                          }
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: AppSpacing.md),
-
-                      // Description Field
-                      TextFormField(
-                        controller: _descriptionController,
-                        decoration: const InputDecoration(
-                          labelText: 'Description',
-                          hintText: 'Enter description',
-                          prefixIcon: Icon(Icons.description_outlined),
-                        ),
-                        textCapitalization: TextCapitalization.sentences,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter a description';
-                          }
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: AppSpacing.md),
-
-                      // Category Dropdown
-                      if (widget.categories.isNotEmpty)
-                        DropdownButtonFormField<Category>(
-                          value: _selectedCategory,
-                          decoration: const InputDecoration(
-                            labelText: 'Category (Optional)',
-                            prefixIcon: Icon(Icons.category_outlined),
+                        // Name Field
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            labelText: isTurkish ? 'İsim' : 'Name',
+                            hintText: isTurkish ? 'Fatura/abonelik ismi girin' : 'Enter bill/subscription name',
+                            prefixIcon: const Icon(Icons.label_outline),
                           ),
-                          items: [
-                            const DropdownMenuItem<Category>(
-                              value: null,
-                              child: Text('No category'),
-                            ),
-                            ...widget.categories.map((category) {
-                              return DropdownMenuItem(
-                                value: category,
-                                child: Text(category.name),
-                              );
-                            }),
+                          textCapitalization: TextCapitalization.words,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return isTurkish ? 'Lütfen bir isim girin' : 'Please enter a name';
+                            }
+                            return null;
+                          },
+                        ),
+
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Amount Field
+                        TextFormField(
+                          controller: _amountController,
+                          decoration: InputDecoration(
+                            labelText: isTurkish ? 'Tutar' : 'Amount',
+                            hintText: '0.00',
+                            prefixText: currencySymbol,
+                            prefixIcon: const Icon(Icons.monetization_on),
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
                           ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedCategory = value;
-                            });
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return isTurkish ? 'Lütfen bir tutar girin' : 'Please enter an amount';
+                            }
+                            final amount = double.tryParse(value);
+                            if (amount == null || amount <= 0) {
+                              return isTurkish ? '0\'dan büyük geçerli bir tutar girin' : 'Please enter a valid amount greater than 0';
+                            }
+                            return null;
+                          },
+                        ),
+
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Description Field
+                        TextFormField(
+                          controller: _descriptionController,
+                          decoration: InputDecoration(
+                            labelText: isTurkish ? 'Açıklama' : 'Description',
+                            hintText: isTurkish ? 'Açıklama girin' : 'Enter description',
+                            prefixIcon: const Icon(Icons.description_outlined),
+                          ),
+                          textCapitalization: TextCapitalization.sentences,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return isTurkish ? 'Lütfen bir açıklama girin' : 'Please enter a description';
+                            }
+                            return null;
                           },
                         ),
 
                       const SizedBox(height: AppSpacing.md),
 
-                      // Account Dropdown (Optional for bills/subscriptions)
-                      DropdownButtonFormField<Account>(
-                        value: _selectedAccount,
-                        decoration: const InputDecoration(
-                          labelText: 'Default Account (Optional)',
-                          prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-                        ),
-                        items: [
-                          const DropdownMenuItem<Account>(
-                            value: null,
-                            child: Text('No default account'),
+                        // Category Dropdown
+                        if (widget.categories.isNotEmpty)
+                          DropdownButtonFormField<Category>(
+                            value: _selectedCategory,
+                            decoration: InputDecoration(
+                              labelText: isTurkish ? 'Kategori (İsteğe Bağlı)' : 'Category (Optional)',
+                              prefixIcon: const Icon(Icons.category_outlined),
+                            ),
+                            items: [
+                              DropdownMenuItem<Category>(
+                                value: null,
+                                child: Text(isTurkish ? 'Kategori yok' : 'No category'),
+                              ),
+                              ...widget.categories.map((category) {
+                                return DropdownMenuItem(
+                                  value: category,
+                                  child: Text(category.name),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedCategory = value;
+                              });
+                            },
                           ),
+
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Account Dropdown (Optional for bills/subscriptions)
+                        DropdownButtonFormField<Account>(
+                          value: _selectedAccount,
+                          decoration: InputDecoration(
+                            labelText: isTurkish ? 'Varsayılan Hesap (İsteğe Bağlı)' : 'Default Account (Optional)',
+                            prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+                          ),
+                          items: [
+                            DropdownMenuItem<Account>(
+                              value: null,
+                              child: Text(isTurkish ? 'Varsayılan hesap yok' : 'No default account'),
+                            ),
                           ...widget.accounts.map((account) {
                             return DropdownMenuItem(
                               value: account,
@@ -375,14 +389,14 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
                       Container(
                         padding: const EdgeInsets.all(AppSpacing.md),
                         decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withOpacity(0.1),
+                          color: appState.selectedTheme.primaryColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(AppRadius.md),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               Icons.info_outline,
-                              color: AppTheme.primaryColor,
+                              color: appState.selectedTheme.primaryColor,
                               size: 20,
                             ),
                             const SizedBox(width: AppSpacing.sm),
@@ -392,7 +406,7 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
                                     ? 'Bills have a specific due date and need to be paid once.'
                                     : 'Subscriptions automatically schedule the next payment based on frequency.',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: AppTheme.primaryColor,
+                                      color: appState.selectedTheme.primaryColor,
                                     ),
                               ),
                             ),
@@ -408,20 +422,24 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                ElevatedButton(
-                  onPressed: _submitForm,
-                  child: Text(_isEditing ? 'Update' : 'Add'),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(isTurkish ? 'İptal' : 'Cancel'),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    ElevatedButton(
+                      onPressed: _submitForm,
+                      child: Text(_isEditing 
+                          ? (isTurkish ? 'Güncelle' : 'Update')
+                          : (isTurkish ? 'Ekle' : 'Add')),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

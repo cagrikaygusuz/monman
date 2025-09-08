@@ -5,6 +5,7 @@ import '../models/account.dart';
 import '../models/category.dart';
 import '../models/transaction.dart' as models;
 import '../models/bill_subscription.dart';
+import '../models/loan_installment.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -24,8 +25,9 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 1,
+      version: 4,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -39,7 +41,33 @@ class DatabaseHelper {
         balance REAL NOT NULL DEFAULT 0,
         currency TEXT NOT NULL DEFAULT 'USD',
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        bank_name TEXT,
+        account_number TEXT,
+        description TEXT,
+        -- Credit Card fields
+        credit_limit REAL,
+        last_payment_date INTEGER,
+        statement_date INTEGER,
+        minimum_payment REAL,
+        current_debt REAL,
+        -- Loan fields
+        loan_amount REAL,
+        installment_count INTEGER,
+        installment_amount REAL,
+        interest_rate REAL,
+        loan_start_date INTEGER,
+        loan_end_date INTEGER,
+        -- Term Deposit fields
+        principal REAL,
+        monthly_interest REAL,
+        maturity_days INTEGER,
+        maturity_start_date INTEGER,
+        maturity_end_date INTEGER,
+        tax_percentage REAL,
+        auto_renewal INTEGER DEFAULT 0,
+        -- Additional field
+        color TEXT
       )
     ''');
 
@@ -97,6 +125,25 @@ class DatabaseHelper {
       )
     ''');
 
+    // Create loan_installments table
+    await db.execute('''
+      CREATE TABLE loan_installments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_account_id INTEGER NOT NULL,
+        installment_number INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        due_date INTEGER NOT NULL,
+        paid_date INTEGER,
+        status INTEGER NOT NULL DEFAULT 0,
+        paid_from_account_id INTEGER,
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (loan_account_id) REFERENCES accounts (id),
+        FOREIGN KEY (paid_from_account_id) REFERENCES accounts (id)
+      )
+    ''');
+
     // Insert default categories
     await _insertDefaultCategories(db);
   }
@@ -138,6 +185,65 @@ class DatabaseHelper {
         'created_at': now,
         'updated_at': now,
       });
+    }
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add new columns for enhanced account details
+      await db.execute('ALTER TABLE accounts ADD COLUMN bank_name TEXT');
+      await db.execute('ALTER TABLE accounts ADD COLUMN account_number TEXT');
+      await db.execute('ALTER TABLE accounts ADD COLUMN description TEXT');
+      
+      // Credit Card fields
+      await db.execute('ALTER TABLE accounts ADD COLUMN credit_limit REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN last_payment_date INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN statement_date INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN minimum_payment REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN current_debt REAL');
+      
+      // Loan fields
+      await db.execute('ALTER TABLE accounts ADD COLUMN loan_amount REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN installment_count INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN installment_amount REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN interest_rate REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN loan_start_date INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN loan_end_date INTEGER');
+      
+      // Term Deposit fields
+      await db.execute('ALTER TABLE accounts ADD COLUMN principal REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN monthly_interest REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN maturity_days INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN maturity_start_date INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN maturity_end_date INTEGER');
+      await db.execute('ALTER TABLE accounts ADD COLUMN tax_percentage REAL');
+      await db.execute('ALTER TABLE accounts ADD COLUMN auto_renewal INTEGER DEFAULT 0');
+    }
+    
+    if (oldVersion < 3) {
+      // Add color field for accounts
+      await db.execute('ALTER TABLE accounts ADD COLUMN color TEXT');
+    }
+    
+    if (oldVersion < 4) {
+      // Create loan_installments table
+      await db.execute('''
+        CREATE TABLE loan_installments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          loan_account_id INTEGER NOT NULL,
+          installment_number INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          due_date INTEGER NOT NULL,
+          paid_date INTEGER,
+          status INTEGER NOT NULL DEFAULT 0,
+          paid_from_account_id INTEGER,
+          notes TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (loan_account_id) REFERENCES accounts (id),
+          FOREIGN KEY (paid_from_account_id) REFERENCES accounts (id)
+        )
+      ''');
     }
   }
 
@@ -379,6 +485,127 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.rawQuery('SELECT SUM(balance) as total FROM accounts');
     return (result.first['total'] as double?) ?? 0.0;
+  }
+
+  // Loan Installment operations
+  Future<int> insertLoanInstallment(LoanInstallment installment) async {
+    final db = await database;
+    return await db.insert('loan_installments', installment.toMap());
+  }
+
+  Future<List<LoanInstallment>> getLoanInstallments({int? loanAccountId}) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps;
+    
+    if (loanAccountId != null) {
+      maps = await db.query(
+        'loan_installments',
+        where: 'loan_account_id = ?',
+        whereArgs: [loanAccountId],
+        orderBy: 'installment_number ASC',
+      );
+    } else {
+      maps = await db.query(
+        'loan_installments', 
+        orderBy: 'due_date ASC',
+      );
+    }
+    
+    return List.generate(maps.length, (i) => LoanInstallment.fromMap(maps[i]));
+  }
+
+  Future<int> updateLoanInstallment(LoanInstallment installment) async {
+    final db = await database;
+    return await db.update(
+      'loan_installments',
+      installment.toMap(),
+      where: 'id = ?',
+      whereArgs: [installment.id],
+    );
+  }
+
+  Future<int> deleteLoanInstallment(int id) async {
+    final db = await database;
+    return await db.delete(
+      'loan_installments',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<LoanInstallment>> getUpcomingInstallments({int? days}) async {
+    final db = await database;
+    final now = DateTime.now();
+    final futureDate = now.add(Duration(days: days ?? 30));
+    
+    final List<Map<String, dynamic>> maps = await db.query(
+      'loan_installments',
+      where: 'status = ? AND due_date >= ? AND due_date <= ?',
+      whereArgs: [
+        InstallmentStatus.pending.index,
+        now.millisecondsSinceEpoch,
+        futureDate.millisecondsSinceEpoch,
+      ],
+      orderBy: 'due_date ASC',
+    );
+    
+    return List.generate(maps.length, (i) => LoanInstallment.fromMap(maps[i]));
+  }
+
+  Future<List<LoanInstallment>> getOverdueInstallments() async {
+    final db = await database;
+    final now = DateTime.now();
+    
+    final List<Map<String, dynamic>> maps = await db.query(
+      'loan_installments',
+      where: 'status = ? AND due_date < ?',
+      whereArgs: [
+        InstallmentStatus.pending.index,
+        now.millisecondsSinceEpoch,
+      ],
+      orderBy: 'due_date ASC',
+    );
+    
+    return List.generate(maps.length, (i) => LoanInstallment.fromMap(maps[i]));
+  }
+
+  Future<void> generateLoanInstallments(Account loanAccount) async {
+    if (loanAccount.type != AccountType.loan || 
+        loanAccount.installmentCount == null || 
+        loanAccount.installmentAmount == null ||
+        loanAccount.loanStartDate == null) {
+      return;
+    }
+
+    // Check if installments already exist
+    final existingInstallments = await getLoanInstallments(loanAccountId: loanAccount.id!);
+    if (existingInstallments.isNotEmpty) {
+      return; // Already generated
+    }
+
+    final now = DateTime.now();
+    final startDate = loanAccount.loanStartDate!;
+    
+    for (int i = 1; i <= loanAccount.installmentCount!; i++) {
+      // Calculate due date (monthly payments by default)
+      final dueDate = DateTime(
+        startDate.year,
+        startDate.month + i,
+        startDate.day,
+      );
+      
+      final installment = LoanInstallment(
+        loanAccountId: loanAccount.id!,
+        installmentNumber: i,
+        amount: loanAccount.installmentAmount!,
+        dueDate: dueDate,
+        status: InstallmentStatus.pending,
+        createdAt: now,
+        updatedAt: now,
+      );
+      
+      await insertLoanInstallment(installment);
+    }
   }
 
   Future<void> close() async {

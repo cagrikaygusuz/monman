@@ -4,6 +4,8 @@ import '../constants/app_theme.dart';
 import '../models/transaction.dart' as models;
 import '../models/account.dart';
 import '../models/category.dart';
+import '../providers/app_state_provider.dart';
+import 'package:provider/provider.dart';
 
 class AddTransactionDialog extends StatefulWidget {
   final List<Account> accounts;
@@ -28,7 +30,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
   final _notesController = TextEditingController();
 
   late TabController _tabController;
-  models.TransactionType _selectedType = models.TransactionType.expense;
+  models.TransactionType _selectedType = models.TransactionType.income;
   Account? _selectedAccount;
   Account? _selectedToAccount; // For transfers
   Category? _selectedCategory;
@@ -107,7 +109,9 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return Consumer<AppStateProvider>(
+      builder: (context, appState, child) {
+        return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
@@ -122,7 +126,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
               children: [
                 Icon(
                   Icons.receipt_long_outlined,
-                  color: AppTheme.primaryColor,
+                  color: appState.selectedTheme.primaryColor,
                   size: 28,
                 ),
                 const SizedBox(width: AppSpacing.sm),
@@ -141,9 +145,9 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.remove_circle_outline, size: 16),
+                      Icon(Icons.add_circle_outline, size: 16),
                       SizedBox(width: 4),
-                      Text('Expense'),
+                      Text('Income'),
                     ],
                   ),
                 ),
@@ -151,9 +155,9 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add_circle_outline, size: 16),
+                      Icon(Icons.remove_circle_outline, size: 16),
                       SizedBox(width: 4),
-                      Text('Income'),
+                      Text('Expense'),
                     ],
                   ),
                 ),
@@ -307,6 +311,25 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
                             labelText: 'Category',
                             prefixIcon: Icon(Icons.category_outlined),
                           ),
+                          selectedItemBuilder: (context) {
+                            return [
+                              const Text('No category'),
+                              ..._availableCategories.map((category) {
+                                return Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: Color(
+                                        int.parse(category.color.substring(1), radix: 16) + 0xFF000000
+                                      ),
+                                      radius: 8,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(category.name),
+                                  ],
+                                );
+                              }),
+                            ];
+                          },
                           items: [
                             const DropdownMenuItem<Category>(
                               value: null,
@@ -315,7 +338,18 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
                             ..._availableCategories.map((category) {
                               return DropdownMenuItem(
                                 value: category,
-                                child: Text(category.name),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: Color(
+                                        int.parse(category.color.substring(1), radix: 16) + 0xFF000000
+                                      ),
+                                      radius: 8,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(category.name),
+                                  ],
+                                ),
                               );
                             }),
                           ],
@@ -388,6 +422,8 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
           ],
         ),
       ),
+    );
+      },
     );
   }
 
