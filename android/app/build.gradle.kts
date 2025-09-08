@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.monman"
+    namespace = "com.cagrik.monman"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
