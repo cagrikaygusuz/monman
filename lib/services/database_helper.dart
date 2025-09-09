@@ -7,6 +7,7 @@ import '../models/category.dart' as category_model;
 import '../models/transaction.dart' as models;
 import '../models/bill_subscription.dart';
 import '../models/loan_installment.dart';
+import '../models/user_profile.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -27,7 +28,7 @@ class DatabaseHelper {
       
       return await openDatabase(
         path,
-        version: 4,
+        version: 5,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
         onOpen: (db) async {
@@ -154,6 +155,20 @@ class DatabaseHelper {
       )
     ''');
 
+    // Create user_profiles table
+    await db.execute('''
+      CREATE TABLE user_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT,
+        avatar_path TEXT,
+        phone TEXT,
+        occupation TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
     // Insert default categories
     await _insertDefaultCategories(db);
   }
@@ -252,6 +267,22 @@ class DatabaseHelper {
           updated_at INTEGER NOT NULL,
           FOREIGN KEY (loan_account_id) REFERENCES accounts (id),
           FOREIGN KEY (paid_from_account_id) REFERENCES accounts (id)
+        )
+      ''');
+    }
+    
+    if (oldVersion < 5) {
+      // Create user_profiles table
+      await db.execute('''
+        CREATE TABLE user_profiles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          email TEXT,
+          avatar_path TEXT,
+          phone TEXT,
+          occupation TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
         )
       ''');
     }
@@ -616,6 +647,44 @@ class DatabaseHelper {
       
       await insertLoanInstallment(installment);
     }
+  }
+
+  // User Profile operations
+  Future<int> insertUserProfile(UserProfile profile) async {
+    final db = await database;
+    return await db.insert('user_profiles', profile.toMap());
+  }
+
+  Future<UserProfile?> getUserProfile() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'user_profiles',
+      limit: 1,
+      orderBy: 'id DESC',
+    );
+    if (maps.isNotEmpty) {
+      return UserProfile.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  Future<int> updateUserProfile(UserProfile profile) async {
+    final db = await database;
+    return await db.update(
+      'user_profiles',
+      profile.toMap(),
+      where: 'id = ?',
+      whereArgs: [profile.id],
+    );
+  }
+
+  Future<int> deleteUserProfile(int id) async {
+    final db = await database;
+    return await db.delete(
+      'user_profiles',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> close() async {

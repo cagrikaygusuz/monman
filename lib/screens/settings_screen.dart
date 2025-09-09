@@ -6,6 +6,7 @@ import '../providers/app_state_provider.dart';
 import '../models/category.dart';
 import '../models/app_theme_template.dart';
 import '../widgets/category_management_dialog.dart';
+import '../widgets/user_profile_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -355,6 +356,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _showUserProfileDialog() async {
+    final appState = context.read<AppStateProvider>();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => UserProfileDialog(
+        userProfile: appState.userProfile,
+      ),
+    );
+    
+    if (result == true) {
+      // Profile was updated, data is automatically synced through the provider
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppStateProvider>(
@@ -374,40 +389,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           // User Profile Section
           Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: appState.selectedTheme.primaryColor,
-                    child: const Icon(
-                      Icons.person,
-                      size: 32,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          selectedLanguage == 'Turkish' ? 'Kullanıcı' : 'User',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        Text(
-                          selectedLanguage == 'Turkish' 
-                              ? 'Kişisel Finans Yöneticisi' 
-                              : 'Personal Finance Manager',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(context).textTheme.bodySmall?.color,
+            child: InkWell(
+              onTap: () => _showUserProfileDialog(),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: appState.selectedTheme.primaryColor,
+                      child: appState.userProfile?.avatarPath != null
+                          ? ClipOval(
+                              child: Image.asset(
+                                appState.userProfile!.avatarPath!,
+                                width: 60,
+                                height: 60,
+                                fit: BoxFit.cover,
                               ),
-                        ),
-                      ],
+                            )
+                          : Text(
+                              appState.userProfile?.getInitials() ?? 'U',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            appState.userProfile?.name ?? 
+                            (selectedLanguage == 'Turkish' ? 'Kullanıcı' : 'User'),
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          Text(
+                            appState.userProfile?.email ?? 
+                            (selectedLanguage == 'Turkish' 
+                                ? 'Profili düzenlemek için dokunun' 
+                                : 'Tap to edit profile'),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).textTheme.bodySmall?.color,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.edit,
+                      color: appState.selectedTheme.primaryColor,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

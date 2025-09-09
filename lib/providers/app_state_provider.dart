@@ -65,6 +65,7 @@ class AppStateProvider extends ChangeNotifier {
         DatabaseHelper().getCategories(),
         DatabaseHelper().getBillsSubscriptions(),
         DatabaseHelper().getLoanInstallments(),
+        DatabaseHelper().getUserProfile(),
         _loadPreferences(),
       ]);
 
@@ -73,6 +74,7 @@ class AppStateProvider extends ChangeNotifier {
       _categories = futures[2] as List<Category>;
       _billsSubscriptions = futures[3] as List<BillSubscription>;
       _loanInstallments = futures[4] as List<LoanInstallment>;
+      _userProfile = futures[5] as UserProfile?;
     } catch (e) {
       debugPrint('Error loading data: $e');
     }
