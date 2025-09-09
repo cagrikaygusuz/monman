@@ -202,15 +202,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(getTypeTitle()),
-        content: SizedBox(
-          width: double.maxFinite,
+      builder: (context) => Dialog(
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          height: MediaQuery.of(context).size.height * 0.7,
+          padding: const EdgeInsets.all(16),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                height: 300,
+              Text(
+                getTypeTitle(),
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 16),
+              Expanded(
                 child: categories.isEmpty
                   ? Center(
                       child: Text(
@@ -223,7 +228,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     )
                   : ListView.builder(
-                      shrinkWrap: true,
                       itemCount: categories.length,
                       itemBuilder: (context, index) {
                         final category = categories[index];
@@ -266,30 +270,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
               ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(isTurkish ? 'Kapat' : 'Close'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      final result = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => CategoryManagementDialog(
+                          categoryType: categoryType,
+                        ),
+                      );
+                      if (result == true) {
+                        _showCategoryManagement(categoryType);
+                      }
+                    },
+                    child: Text(isTurkish ? 'Yeni Ekle' : 'Add New'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(isTurkish ? 'Kapat' : 'Close'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              final result = await showDialog<bool>(
-                context: context,
-                builder: (context) => CategoryManagementDialog(
-                  categoryType: categoryType,
-                ),
-              );
-              if (result == true) {
-                _showCategoryManagement(categoryType);
-              }
-            },
-            child: Text(isTurkish ? 'Yeni Ekle' : 'Add New'),
-          ),
-        ],
       ),
     );
   }

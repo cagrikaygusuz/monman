@@ -18,6 +18,7 @@ class _UserProfileDialogState extends State<UserProfileDialog> {
   final _phoneController = TextEditingController();
   final _occupationController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -167,7 +168,7 @@ class _UserProfileDialogState extends State<UserProfileDialog> {
           child: Text(isTurkish ? 'İptal' : 'Cancel'),
         ),
         ElevatedButton(
-          onPressed: _saveProfile,
+          onPressed: _isSaving ? null : _saveProfile,
           child: Text(isEditing 
             ? (isTurkish ? 'Güncelle' : 'Update')
             : (isTurkish ? 'Kaydet' : 'Save')
@@ -177,11 +178,17 @@ class _UserProfileDialogState extends State<UserProfileDialog> {
     );
   }
 
-  void _saveProfile() {
+  Future<void> _saveProfile() async {
+    if (_isSaving) return; // Prevent multiple submissions
     if (!_formKey.currentState!.validate()) return;
+    
+    setState(() {
+      _isSaving = true;
+    });
 
     try {
       final now = DateTime.now();
+      final appState = context.read<AppStateProvider>();
       
       final profile = widget.userProfile?.copyWith(
         name: _nameController.text.trim(),
@@ -198,16 +205,29 @@ class _UserProfileDialogState extends State<UserProfileDialog> {
         updatedAt: now,
       );
       
-      Navigator.of(context).pop(profile);
+      if (widget.userProfile != null) {
+        await appState.updateUserProfile(profile);
+      } else {
+        await appState.createUserProfile(profile);
+      }
+      
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.read<AppStateProvider>().selectedLanguage == 'Turkish'
-            ? 'Profil kaydedilirken bir hata oluştu'
-            : 'Error saving profile'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.read<AppStateProvider>().selectedLanguage == 'Turkish'
+              ? 'Profil kaydedilirken bir hata oluştu'
+              : 'Error saving profile'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 }

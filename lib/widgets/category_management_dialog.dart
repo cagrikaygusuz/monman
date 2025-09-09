@@ -69,12 +69,15 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(isTurkish ? 'Renk Seç' : 'Pick Color'),
-        content: SingleChildScrollView(
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: SingleChildScrollView(
           child: BlockPicker(
             pickerColor: currentColor,
             onColorChanged: (color) {
               currentColor = color;
-            },
+            }),
           ),
         ),
         actions: [
