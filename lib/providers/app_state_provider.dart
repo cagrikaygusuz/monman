@@ -173,7 +173,79 @@ class AppStateProvider extends ChangeNotifier {
 
   Future<void> deleteTransaction(int transactionId) async {
     try {
+      final now = DateTime.now();
+      
+      // Get the transaction before deleting to determine what needs to be reverted
+      final transaction = _transactions.firstWhere((t) => t.id == transactionId);
+      
+      // Check if this transaction was a bill/subscription payment
+      final isBillPayment = transaction.description.contains('Bill Payment:') || 
+                           transaction.description.contains('Subscription Payment:') ||
+                           transaction.description.contains('Fatura Ödemesi:') ||
+                           transaction.description.contains('Abonelik Ödemesi:');
+      
+      if (isBillPayment) {
+        // Find the related bill/subscription and mark it as unpaid
+        final billName = transaction.description.split(':').length > 1 
+          ? transaction.description.split(':')[1].trim()
+          : '';
+          
+        if (billName.isNotEmpty) {
+          final relatedBill = _billsSubscriptions.where((b) => 
+            b.name.toLowerCase().contains(billName.toLowerCase()) ||
+            billName.toLowerCase().contains(b.name.toLowerCase())
+          ).firstOrNull;
+          
+          if (relatedBill != null && relatedBill.isPaid) {
+            // Mark bill as unpaid
+            final updatedBill = relatedBill.copyWith(
+              isPaid: false,
+              updatedAt: now,
+            );
+            await DatabaseHelper().updateBillSubscription(updatedBill);
+          }
+        }
+      }
+      
+      // Revert account balance changes
+      final account = _accounts.firstWhere((a) => a.id == transaction.accountId);
+      double balanceAdjustment = 0.0;
+      
+      switch (transaction.type) {
+        case TransactionType.income:
+          // Remove the income amount from account balance
+          balanceAdjustment = -transaction.amount;
+          break;
+        case TransactionType.expense:
+          // Add back the expense amount to account balance
+          balanceAdjustment = transaction.amount;
+          break;
+        case TransactionType.transfer:
+          // Revert transfer: add back to source account, subtract from destination
+          balanceAdjustment = transaction.amount;
+          
+          if (transaction.toAccountId != null) {
+            final toAccount = _accounts.firstWhere((a) => a.id == transaction.toAccountId);
+            final updatedToAccount = toAccount.copyWith(
+              balance: toAccount.balance - transaction.amount,
+              updatedAt: now,
+            );
+            await DatabaseHelper().updateAccount(updatedToAccount);
+          }
+          break;
+      }
+      
+      // Update source account balance
+      final updatedAccount = account.copyWith(
+        balance: account.balance + balanceAdjustment,
+        updatedAt: now,
+      );
+      await DatabaseHelper().updateAccount(updatedAccount);
+      
+      // Delete the transaction
       await DatabaseHelper().deleteTransaction(transactionId);
+      
+      // Reload all data to reflect changes
       await loadAllData();
     } catch (e) {
       debugPrint('Error deleting transaction: $e');

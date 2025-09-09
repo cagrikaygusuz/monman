@@ -93,7 +93,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
         id: _isEditing ? widget.transaction!.id : null,
         type: _selectedType,
         amount: double.parse(_amountController.text),
-        description: _descriptionController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty ? 'No description' : _descriptionController.text.trim(),
         categoryId: _selectedCategory?.id,
         accountId: _selectedAccount!.id!,
         toAccountId: _selectedToAccount?.id,
@@ -184,17 +184,11 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> with Ticker
                       TextFormField(
                         controller: _descriptionController,
                         decoration: const InputDecoration(
-                          labelText: 'Description',
+                          labelText: 'Description (Optional)',
                           hintText: 'Enter transaction description',
                           prefixIcon: Icon(Icons.description_outlined),
                         ),
                         textCapitalization: TextCapitalization.sentences,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter a description';
-                          }
-                          return null;
-                        },
                       ),
 
                       const SizedBox(height: AppSpacing.md),

@@ -37,9 +37,13 @@ class DashboardScreen extends StatelessWidget {
             backgroundColor: Colors.transparent,
             elevation: 0,
           ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await appState.loadAllData();
+        },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
@@ -136,6 +140,7 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
           ],
+          ),
         ),
       ),
     );

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../constants/app_theme.dart';
 import '../models/transaction.dart' as models;
 import '../models/category.dart';
 import '../models/account.dart';
+import '../models/bill_subscription.dart';
 import '../providers/app_state_provider.dart';
 import '../services/database_helper.dart';
 
@@ -19,6 +21,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
   List<models.Transaction> _transactions = [];
   List<Category> _categories = [];
   List<Account> _accounts = [];
+  List<BillSubscription> _billsSubscriptions = [];
   bool _isLoading = true;
   DateTimeRange? _selectedDateRange;
   String _selectedPeriod = 'all'; // all, thisMonth, lastMonth, thisYear
@@ -27,7 +30,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _loadData();
   }
 
@@ -43,6 +46,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
         DatabaseHelper().getTransactions(),
         DatabaseHelper().getCategories(),
         DatabaseHelper().getAccounts(),
+        DatabaseHelper().getBillsSubscriptions(),
       ]);
 
       if (mounted) {
@@ -50,6 +54,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
           _transactions = futures[0] as List<models.Transaction>;
           _categories = futures[1] as List<Category>;
           _accounts = futures[2] as List<Account>;
+          _billsSubscriptions = futures[3] as List<BillSubscription>;
           _isLoading = false;
         });
       }
@@ -89,6 +94,48 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
     if (_selectedDateRange != null) {
       filtered = filtered.where((transaction) {
         final date = transaction.date;
+        return date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+               date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
+      }).toList();
+    }
+    
+    return filtered;
+  }
+
+  List<BillSubscription> get _filteredBillsSubscriptions {
+    final now = DateTime.now();
+    List<BillSubscription> filtered = _billsSubscriptions;
+
+    // Apply period filter
+    switch (_selectedPeriod) {
+      case 'thisMonth':
+        filtered = _billsSubscriptions.where((b) {
+          final date = b.dueDate ?? b.nextDate ?? b.updatedAt;
+          return date.year == now.year && date.month == now.month;
+        }).toList();
+        break;
+      case 'lastMonth':
+        final lastMonth = DateTime(now.year, now.month - 1);
+        filtered = _billsSubscriptions.where((b) {
+          final date = b.dueDate ?? b.nextDate ?? b.updatedAt;
+          return date.year == lastMonth.year && date.month == lastMonth.month;
+        }).toList();
+        break;
+      case 'thisYear':
+        filtered = _billsSubscriptions.where((b) {
+          final date = b.dueDate ?? b.nextDate ?? b.updatedAt;
+          return date.year == now.year;
+        }).toList();
+        break;
+      case 'all':
+      default:
+        filtered = _billsSubscriptions;
+    }
+    
+    // Apply date range filter if set
+    if (_selectedDateRange != null) {
+      filtered = filtered.where((bill) {
+        final date = bill.dueDate ?? bill.nextDate ?? bill.updatedAt;
         return date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
                date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
       }).toList();
@@ -150,6 +197,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
                 Tab(text: isTurkish ? 'Grafikler' : 'Charts'),
                 Tab(text: isTurkish ? 'Kategoriler' : 'Categories'),
                 Tab(text: isTurkish ? 'Hesaplar' : 'Accounts'),
+                Tab(text: isTurkish ? 'Faturalar' : 'Bills'),
                 Tab(text: isTurkish ? 'Trendler' : 'Trends'),
                 Tab(text: isTurkish ? 'İçgörüler' : 'Insights'),
               ],
@@ -157,17 +205,58 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
           ),
           body: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _transactions.isEmpty
-                  ? _buildEmptyState()
-                  : TabBarView(
+              : TabBarView(
                       controller: _tabController,
                       children: [
-                        _buildOverviewTab(isTurkish, appState),
-                        _buildChartsTab(isTurkish),
-                        _buildCategoriesTab(isTurkish),
-                        _buildAccountsTab(isTurkish, appState),
-                        _buildTrendsTab(isTurkish, appState),
-                        _buildInsightsTab(isTurkish, appState),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildOverviewTab(isTurkish, appState),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildChartsTab(isTurkish),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildCategoriesTab(isTurkish),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildAccountsTab(isTurkish, appState),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildBillsTab(isTurkish, appState),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildTrendsTab(isTurkish, appState),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: () async {
+                            await context.read<AppStateProvider>().loadAllData();
+                            await _loadData();
+                          },
+                          child: _buildInsightsTab(isTurkish, appState),
+                        ),
                       ],
                     ),
         );
@@ -243,8 +332,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
         .where((t) => t.type == models.TransactionType.expense)
         .fold<double>(0.0, (sum, t) => sum + t.amount);
     
-    final balance = income - expenses;
+    // Add bill/subscription expenses from filtered data
+    final billExpenses = _filteredBillsSubscriptions.where((b) => b.isPaid).fold<double>(0.0, (sum, b) => sum + b.amount);
+    final totalExpenses = expenses + billExpenses;
+    
+    final balance = income - totalExpenses;
     final transactionCount = _filteredTransactions.length;
+    final billCount = _filteredBillsSubscriptions.length;
     final currencySymbol = appState.getCurrencySymbol();
 
     return Row(
@@ -261,7 +355,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
         Expanded(
           child: _buildStatCard(
             isTurkish ? 'Toplam Gider' : 'Total Expenses',
-            '$currencySymbol${expenses.toStringAsFixed(2)}',
+            '$currencySymbol${totalExpenses.toStringAsFixed(2)}',
             Colors.red,
             Icons.trending_down,
           ),
@@ -278,10 +372,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
         const SizedBox(width: 12),
         Expanded(
           child: _buildStatCard(
-            isTurkish ? 'İşlem Sayısı' : 'Transactions',
-            transactionCount.toString(),
-            Theme.of(context).primaryColor,
-            Icons.receipt_long,
+            isTurkish ? 'Faturalar' : 'Bills',
+            billCount.toString(),
+            Colors.orange,
+            Icons.receipt,
           ),
         ),
       ],
@@ -325,9 +419,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
         .where((t) => t.type == models.TransactionType.expense)
         .fold<double>(0.0, (sum, t) => sum + t.amount);
 
-    if (income == 0 && expenses == 0) {
-      return const SizedBox.shrink();
-    }
+    // Always show chart, even with zero values
+    final currencySymbol = context.read<AppStateProvider>().getCurrencySymbol();
 
     return Card(
       child: Padding(
@@ -347,8 +440,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
                   sections: [
                     PieChartSectionData(
                       color: AppTheme.secondaryColor,
-                      value: income,
-                      title: '${isTurkish ? "Gelir" : "Income"}\n\$${income.toStringAsFixed(0)}',
+                      value: income > 0 ? income : 0.1, // Show small slice if zero
+                      title: '${isTurkish ? "Gelir" : "Income"}\n$currencySymbol${income.toStringAsFixed(0)}',
                       radius: 80,
                       titleStyle: const TextStyle(
                         fontSize: 12,
@@ -358,8 +451,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
                     ),
                     PieChartSectionData(
                       color: AppTheme.errorColor,
-                      value: expenses,
-                      title: '${isTurkish ? "Gider" : "Expenses"}\n\$${expenses.toStringAsFixed(0)}',
+                      value: expenses > 0 ? expenses : 0.1, // Show small slice if zero
+                      title: '${isTurkish ? "Gider" : "Expenses"}\n$currencySymbol${expenses.toStringAsFixed(0)}',
                       radius: 80,
                       titleStyle: const TextStyle(
                         fontSize: 12,
@@ -398,8 +491,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
       }
     }
 
+    // Always show chart, even when empty
+    final currencySymbol = context.read<AppStateProvider>().getCurrencySymbol();
+    
+    // If no data, show placeholder
     if (expensesByCategory.isEmpty) {
-      return const SizedBox.shrink();
+      expensesByCategory['No Expenses'] = 1;
     }
 
     final colors = [
@@ -439,7 +536,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
                     return PieChartSectionData(
                       color: colors[index % colors.length],
                       value: category.value,
-                      title: '${category.key}\n\$${category.value.toStringAsFixed(0)}',
+                      title: '${category.key}\n$currencySymbol${category.value.toStringAsFixed(0)}',
                       radius: 60,
                       titleStyle: const TextStyle(
                         fontSize: 10,
@@ -473,8 +570,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
       }
     }
 
+    // Always show chart, even when empty
     if (monthlyData.isEmpty) {
-      return const SizedBox.shrink();
+      // Add placeholder data for current month
+      final now = DateTime.now();
+      final currentMonth = '${now.month}/${now.year}';
+      monthlyData[currentMonth] = {'income': 0.0, 'expenses': 0.0};
     }
 
     final sortedEntries = monthlyData.entries.toList()
@@ -600,8 +701,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
       }
     }
 
+    // Always show chart, even when empty
     if (categoryTotals.isEmpty) {
-      return const SizedBox.shrink();
+      categoryTotals['No Categories'] = {'income': 0.0, 'expenses': 0.0, 'count': 0.0};
     }
 
     return Card(
@@ -722,6 +824,23 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
           _buildAccountActivity(isTurkish),
           const SizedBox(height: 20),
           _buildAccountTransactionFlow(isTurkish),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBillsTab(bool isTurkish, AppStateProvider appState) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          _buildBillsSummary(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildBillsBreakdown(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildUpcomingBills(isTurkish, appState),
+          const SizedBox(height: 20),
+          _buildBillsPaymentHistory(isTurkish, appState),
         ],
       ),
     );
@@ -1053,7 +1172,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
       }
     }
 
-    if (expensesByCategory.isEmpty) return const SizedBox.shrink();
+    // Always show chart, even when empty
+    if (expensesByCategory.isEmpty) {
+      expensesByCategory['No Expenses'] = 0;
+    }
 
     final sortedCategories = expensesByCategory.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -1351,23 +1473,200 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
   }
 
   Widget _buildCategoryComparison(bool isTurkish) {
+    // Compare this period vs previous period
+    final now = DateTime.now();
+    final currentPeriodTransactions = _filteredTransactions;
+    
+    // Get previous period transactions for comparison
+    List<models.Transaction> previousPeriodTransactions;
+    String comparisonLabel;
+    
+    switch (_selectedPeriod) {
+      case 'thisMonth':
+        final lastMonth = DateTime(now.year, now.month - 1);
+        previousPeriodTransactions = _transactions.where((t) =>
+          t.date.year == lastMonth.year && t.date.month == lastMonth.month).toList();
+        comparisonLabel = isTurkish ? 'vs Geçen Ay' : 'vs Last Month';
+        break;
+      case 'lastMonth':
+        final twoMonthsAgo = DateTime(now.year, now.month - 2);
+        previousPeriodTransactions = _transactions.where((t) =>
+          t.date.year == twoMonthsAgo.year && t.date.month == twoMonthsAgo.month).toList();
+        comparisonLabel = isTurkish ? 'vs 2 Ay Önce' : 'vs 2 Months Ago';
+        break;
+      case 'thisYear':
+        final lastYear = DateTime(now.year - 1);
+        previousPeriodTransactions = _transactions.where((t) => t.date.year == lastYear.year).toList();
+        comparisonLabel = isTurkish ? 'vs Geçen Yıl' : 'vs Last Year';
+        break;
+      default:
+        // For 'all' and custom ranges, compare with same period length before
+        final periodLength = _selectedDateRange != null 
+          ? _selectedDateRange!.end.difference(_selectedDateRange!.start).inDays
+          : 30; // Default 30 days
+        final startDate = _selectedDateRange?.start ?? now.subtract(const Duration(days: 30));
+        final endDate = _selectedDateRange?.end ?? now;
+        final previousStart = startDate.subtract(Duration(days: periodLength));
+        final previousEnd = endDate.subtract(Duration(days: periodLength));
+        
+        previousPeriodTransactions = _transactions.where((t) =>
+          t.date.isAfter(previousStart.subtract(const Duration(days: 1))) &&
+          t.date.isBefore(previousEnd.add(const Duration(days: 1)))).toList();
+        comparisonLabel = isTurkish ? 'vs Önceki Dönem' : 'vs Previous Period';
+        break;
+    }
+
+    // Calculate category totals for both periods
+    final currentCategoryTotals = <String, double>{};
+    final previousCategoryTotals = <String, double>{};
+
+    for (final transaction in currentPeriodTransactions) {
+      if (transaction.type == models.TransactionType.expense) {
+        final categoryName = transaction.categoryId != null
+            ? _categories.firstWhere((c) => c.id == transaction.categoryId, 
+                orElse: () => Category(name: 'Uncategorized', type: CategoryType.expense, color: '#9E9E9E', createdAt: DateTime.now(), updatedAt: DateTime.now())).name
+            : 'Uncategorized';
+        currentCategoryTotals[categoryName] = (currentCategoryTotals[categoryName] ?? 0) + transaction.amount;
+      }
+    }
+
+    for (final transaction in previousPeriodTransactions) {
+      if (transaction.type == models.TransactionType.expense) {
+        final categoryName = transaction.categoryId != null
+            ? _categories.firstWhere((c) => c.id == transaction.categoryId, 
+                orElse: () => Category(name: 'Uncategorized', type: CategoryType.expense, color: '#9E9E9E', createdAt: DateTime.now(), updatedAt: DateTime.now())).name
+            : 'Uncategorized';
+        previousCategoryTotals[categoryName] = (previousCategoryTotals[categoryName] ?? 0) + transaction.amount;
+      }
+    }
+
+    // Get all categories that appear in either period
+    final allCategories = {...currentCategoryTotals.keys, ...previousCategoryTotals.keys};
+    
+    // Always show comparison, even when empty
+    if (allCategories.isEmpty) {
+      allCategories.add('No Expenses');
+      currentCategoryTotals['No Expenses'] = 0;
+      previousCategoryTotals['No Expenses'] = 0;
+    }
+
+    // Create comparison data
+    final comparisonData = allCategories.map((category) {
+      final currentAmount = currentCategoryTotals[category] ?? 0;
+      final previousAmount = previousCategoryTotals[category] ?? 0;
+      final change = previousAmount > 0 
+        ? ((currentAmount - previousAmount) / previousAmount * 100)
+        : (currentAmount > 0 ? 100.0 : 0.0);
+      
+      return {
+        'category': category,
+        'current': currentAmount,
+        'previous': previousAmount,
+        'change': change,
+      };
+    }).toList();
+
+    // Sort by current amount (highest first)
+    comparisonData.sort((a, b) => (b['current'] as double).compareTo(a['current'] as double));
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              isTurkish ? 'Kategori Karşılaştırması' : 'Category Comparison',
-              style: Theme.of(context).textTheme.headlineSmall,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    isTurkish ? 'Kategori Karşılaştırması' : 'Category Comparison',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    comparisonLabel,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-            Text(
-              isTurkish 
-                ? 'Bu özellik gelecek güncellemelerde eklenecek.'
-                : 'This feature will be added in future updates.',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
+            ...comparisonData.take(6).map((data) {
+              final category = data['category'] as String;
+              final current = data['current'] as double;
+              final previous = data['previous'] as double;
+              final change = data['change'] as double;
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        category,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${context.read<AppStateProvider>().getCurrencySymbol()}${current.toStringAsFixed(0)}',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (previous > 0)
+                            Text(
+                              '${context.read<AppStateProvider>().getCurrencySymbol()}${previous.toStringAsFixed(0)}',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 80,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            change > 0 ? Icons.trending_up : 
+                            change < 0 ? Icons.trending_down : Icons.trending_flat,
+                            size: 16,
+                            color: change > 0 ? Colors.red : 
+                                   change < 0 ? Colors.green : Colors.grey,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${change > 0 ? '+' : ''}${change.toStringAsFixed(0)}%',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: change > 0 ? Colors.red : 
+                                     change < 0 ? Colors.green : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -1430,7 +1729,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
           const SizedBox(height: 24),
           
           // Spending Patterns
-          _buildSpendingPatterns(isTurkish, filteredTransactions),
+          _buildSpendingPatterns(isTurkish, filteredTransactions, appState),
           const SizedBox(height: 24),
           
           // Budget Recommendations
@@ -1438,7 +1737,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
           const SizedBox(height: 24),
           
           // Savings Opportunities
-          _buildSavingsOpportunities(isTurkish, filteredTransactions),
+          _buildSavingsOpportunities(isTurkish, filteredTransactions, appState),
         ],
       ),
     );
@@ -1725,8 +2024,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
     );
   }
 
-  Widget _buildSpendingPatterns(bool isTurkish, List<models.Transaction> transactions) {
-    final patterns = _analyzeSpendingPatterns(transactions);
+  Widget _buildSpendingPatterns(bool isTurkish, List<models.Transaction> transactions, AppStateProvider appState) {
+    final patterns = _analyzeSpendingPatterns(transactions, isTurkish, appState.getCurrencySymbol());
     
     return Card(
       child: Padding(
@@ -1805,8 +2104,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
     );
   }
 
-  Widget _buildSavingsOpportunities(bool isTurkish, List<models.Transaction> transactions) {
-    final opportunities = _findSavingsOpportunities(transactions, isTurkish);
+  Widget _buildSavingsOpportunities(bool isTurkish, List<models.Transaction> transactions, AppStateProvider appState) {
+    final opportunities = _findSavingsOpportunities(transactions, isTurkish, appState.getCurrencySymbol());
     
     return Card(
       child: Padding(
@@ -1952,24 +2251,71 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
     }
   }
 
-  List<Map<String, dynamic>> _analyzeSpendingPatterns(List<models.Transaction> transactions) {
-    return [
-      {
-        'icon': Icons.restaurant,
-        'title': 'Weekend Dining',
-        'description': 'You spend 40% more on dining during weekends',
-      },
-      {
-        'icon': Icons.shopping_cart,
-        'title': 'Monthly Shopping Spikes',
-        'description': 'Higher shopping expenses in the first week of each month',
-      },
-      {
-        'icon': Icons.local_gas_station,
-        'title': 'Consistent Transport',
-        'description': 'Steady transportation costs throughout the month',
-      },
-    ];
+  List<Map<String, dynamic>> _analyzeSpendingPatterns(List<models.Transaction> transactions, bool isTurkish, String currencySymbol) {
+    if (transactions.isEmpty) {
+      return [];
+    }
+
+    final patterns = <Map<String, dynamic>>[];
+    final now = DateTime.now();
+    final thisMonth = DateTime(now.year, now.month);
+    final lastMonth = DateTime(now.year, now.month - 1);
+    
+    // Analyze expense by categories
+    final categoryExpenses = <int, double>{};
+    for (final transaction in transactions) {
+      if (transaction.type == models.TransactionType.expense && transaction.categoryId != null) {
+        categoryExpenses[transaction.categoryId!] = (categoryExpenses[transaction.categoryId] ?? 0) + transaction.amount;
+      }
+    }
+    
+    if (categoryExpenses.isNotEmpty) {
+      final topCategory = categoryExpenses.entries.reduce((a, b) => a.value > b.value ? a : b);
+      final categoryName = _categories.firstWhere((c) => c.id == topCategory.key, 
+        orElse: () => Category(name: 'Unknown', type: CategoryType.expense, color: '#9E9E9E', createdAt: DateTime.now(), updatedAt: DateTime.now())).name;
+      
+      patterns.add({
+        'icon': Icons.trending_up,
+        'title': isTurkish ? 'En Yüksek Harcama Kategorisi' : 'Highest Spending Category',
+        'description': isTurkish 
+          ? '$categoryName kategorisinde $currencySymbol${topCategory.value.toStringAsFixed(0)} harcama'
+          : '$currencySymbol${topCategory.value.toStringAsFixed(0)} spent on $categoryName',
+      });
+    }
+    
+    // Analyze monthly comparison
+    final thisMonthExpenses = transactions
+      .where((t) => t.type == models.TransactionType.expense && 
+                    t.date.year == thisMonth.year && t.date.month == thisMonth.month)
+      .fold(0.0, (sum, t) => sum + t.amount);
+      
+    final lastMonthExpenses = transactions
+      .where((t) => t.type == models.TransactionType.expense && 
+                    t.date.year == lastMonth.year && t.date.month == lastMonth.month)
+      .fold(0.0, (sum, t) => sum + t.amount);
+    
+    if (lastMonthExpenses > 0) {
+      final changePercent = ((thisMonthExpenses - lastMonthExpenses) / lastMonthExpenses * 100);
+      patterns.add({
+        'icon': changePercent > 0 ? Icons.trending_up : Icons.trending_down,
+        'title': isTurkish ? 'Aylık Karşılaştırma' : 'Monthly Comparison',
+        'description': isTurkish 
+          ? 'Geçen aya göre %${changePercent.abs().toStringAsFixed(0)} ${changePercent > 0 ? "artış" : "azalış"}'
+          : '${changePercent.abs().toStringAsFixed(0)}% ${changePercent > 0 ? "increase" : "decrease"} vs last month',
+      });
+    }
+    
+    // Analyze transaction frequency
+    final dailyAverage = transactions.length / 30;
+    patterns.add({
+      'icon': Icons.receipt_long,
+      'title': isTurkish ? 'İşlem Sıklığı' : 'Transaction Frequency',
+      'description': isTurkish 
+        ? 'Günde ortalama ${dailyAverage.toStringAsFixed(1)} işlem'
+        : 'Average ${dailyAverage.toStringAsFixed(1)} transactions per day',
+    });
+    
+    return patterns;
   }
 
   List<String> _generateBudgetRecommendations(List<models.Transaction> transactions, bool isTurkish) {
@@ -1988,34 +2334,71 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
     }
   }
 
-  List<Map<String, String>> _findSavingsOpportunities(List<models.Transaction> transactions, bool isTurkish) {
-    if (isTurkish) {
-      return [
-        {
-          'title': 'Yemek Harcamalarını Azalt',
-          'description': 'Ev yemeği pişirerek aylık \$200 tasarruf edebilirsin',
-          'potential': 'Potansiyel tasarruf: \$200/ay',
-        },
-        {
-          'title': 'Abonelik Gözden Geçir',
-          'description': 'Kullanmadığın abonelikleri iptal et',
-          'potential': 'Potansiyel tasarruf: \$50/ay',
-        },
-      ];
-    } else {
-      return [
-        {
-          'title': 'Reduce Dining Out',
-          'description': 'Cook at home more often to save up to \$200 monthly',
-          'potential': 'Potential savings: \$200/month',
-        },
-        {
-          'title': 'Review Subscriptions',
-          'description': 'Cancel unused subscriptions and services',
-          'potential': 'Potential savings: \$50/month',
-        },
-      ];
+  List<Map<String, String>> _findSavingsOpportunities(List<models.Transaction> transactions, bool isTurkish, String currencySymbol) {
+    final opportunities = <Map<String, String>>[];
+    
+    if (transactions.isEmpty) {
+      return opportunities;
     }
+    
+    // Calculate category expenses
+    final categoryExpenses = <int, double>{};
+    for (final transaction in transactions) {
+      if (transaction.type == models.TransactionType.expense && transaction.categoryId != null) {
+        categoryExpenses[transaction.categoryId!] = (categoryExpenses[transaction.categoryId] ?? 0) + transaction.amount;
+      }
+    }
+    
+    // Find top expense categories and suggest savings
+    if (categoryExpenses.isNotEmpty) {
+      final sortedCategories = categoryExpenses.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      
+      for (int i = 0; i < math.min(2, sortedCategories.length); i++) {
+        final categoryEntry = sortedCategories[i];
+        final categoryName = _categories.firstWhere((c) => c.id == categoryEntry.key, 
+          orElse: () => Category(name: 'Unknown', type: CategoryType.expense, color: '#9E9E9E', createdAt: DateTime.now(), updatedAt: DateTime.now())).name;
+        final amount = categoryEntry.value;
+        final savingsPotential = (amount * 0.2).toStringAsFixed(0); // 20% reduction potential
+        
+        opportunities.add({
+          'title': isTurkish ? '$categoryName Harcamalarını Azalt' : 'Reduce $categoryName Expenses',
+          'description': isTurkish 
+            ? '$categoryName harcamalarınızı %20 azaltarak tasarruf yapabilirsiniz'
+            : 'Reduce your $categoryName spending by 20% to save money',
+          'potential': isTurkish 
+            ? 'Potansiyel tasarruf: $currencySymbol$savingsPotential/ay'
+            : 'Potential savings: $currencySymbol$savingsPotential/month',
+        });
+      }
+    }
+    
+    // Add bill subscription opportunity
+    final billExpenses = _filteredBillsSubscriptions.where((b) => b.isPaid).fold(0.0, (sum, b) => sum + b.amount);
+    if (billExpenses > 0) {
+      final billSavings = (billExpenses * 0.15).toStringAsFixed(0);
+      opportunities.add({
+        'title': isTurkish ? 'Abonelik Gözden Geçir' : 'Review Subscriptions',
+        'description': isTurkish 
+          ? 'Kullanmadığınız abonelikleri iptal ederek tasarruf yapabilirsiniz'
+          : 'Cancel unused subscriptions to free up money',
+        'potential': isTurkish 
+          ? 'Potansiyel tasarruf: $currencySymbol$billSavings/ay'
+          : 'Potential savings: $currencySymbol$billSavings/month',
+      });
+    }
+    
+    if (opportunities.isEmpty) {
+      opportunities.add({
+        'title': isTurkish ? 'Acil Durum Fonu' : 'Emergency Fund',
+        'description': isTurkish 
+          ? 'Gelecekteki beklenmedik masraflar için para biriktirin'
+          : 'Build savings for unexpected expenses',
+        'potential': isTurkish ? 'Hedef: 3-6 aylık harcama' : 'Target: 3-6 months expenses',
+      });
+    }
+    
+    return opportunities;
   }
 
 
@@ -2043,5 +2426,250 @@ class _StatisticsScreenState extends State<StatisticsScreen> with TickerProvider
       case AccountType.depositAccount:
         return isTurkish ? 'Mevduat Hesabı' : 'Deposit Account';
     }
+  }
+
+  // Bills & Subscriptions Statistics Methods
+  Widget _buildBillsSummary(bool isTurkish, AppStateProvider appState) {
+    final filteredBills = _filteredBillsSubscriptions;
+    final totalBills = filteredBills.length;
+    final paidBills = filteredBills.where((b) => b.isPaid).length;
+    final overdueBills = filteredBills.where((b) => 
+      !b.isPaid && b.dueDate != null && b.dueDate!.isBefore(DateTime.now())).length;
+    final totalAmount = filteredBills.fold<double>(0.0, (sum, b) => sum + b.amount);
+    final currencySymbol = appState.getCurrencySymbol();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Fatura & Abonelik Özeti' : 'Bills & Subscriptions Summary',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    isTurkish ? 'Toplam' : 'Total',
+                    totalBills.toString(),
+                    Theme.of(context).primaryColor,
+                    Icons.receipt_long,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    isTurkish ? 'Ödenen' : 'Paid',
+                    paidBills.toString(),
+                    Colors.green,
+                    Icons.check_circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    isTurkish ? 'Gecikmiş' : 'Overdue',
+                    overdueBills.toString(),
+                    Colors.red,
+                    Icons.warning,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    isTurkish ? 'Toplam Tutar' : 'Total Amount',
+                    '$currencySymbol${totalAmount.toStringAsFixed(0)}',
+                    Colors.orange,
+                    Icons.monetization_on,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBillsBreakdown(bool isTurkish, AppStateProvider appState) {
+    final filteredBills = _filteredBillsSubscriptions;
+    final billsByType = <BillSubscriptionType, List<BillSubscription>>{};
+    for (final bill in filteredBills) {
+      billsByType.putIfAbsent(bill.type, () => []).add(bill);
+    }
+
+    final currencySymbol = appState.getCurrencySymbol();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Fatura & Abonelik Dağılımı' : 'Bills & Subscriptions Breakdown',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            ...billsByType.entries.map((entry) {
+              final type = entry.key;
+              final bills = entry.value;
+              final totalAmount = bills.fold<double>(0.0, (sum, b) => sum + b.amount);
+              final typeName = type == BillSubscriptionType.bill 
+                ? (isTurkish ? 'Faturalar' : 'Bills')
+                : (isTurkish ? 'Abonelikler' : 'Subs');
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      type == BillSubscriptionType.bill ? Icons.receipt : Icons.refresh,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(typeName, style: Theme.of(context).textTheme.titleSmall),
+                          Text('${bills.length} ${isTurkish ? "öğe" : "items"}', 
+                               style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '$currencySymbol${totalAmount.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpcomingBills(bool isTurkish, AppStateProvider appState) {
+    final now = DateTime.now();
+    final filteredBills = _filteredBillsSubscriptions;
+    final upcomingBills = filteredBills.where((b) => 
+      !b.isPaid && 
+      ((b.dueDate != null && b.dueDate!.isAfter(now) && b.dueDate!.isBefore(now.add(const Duration(days: 30)))) ||
+       (b.nextDate != null && b.nextDate!.isAfter(now) && b.nextDate!.isBefore(now.add(const Duration(days: 30)))))
+    ).toList();
+
+    upcomingBills.sort((a, b) {
+      final aDate = a.dueDate ?? a.nextDate ?? now;
+      final bDate = b.dueDate ?? b.nextDate ?? now;
+      return aDate.compareTo(bDate);
+    });
+
+    final currencySymbol = appState.getCurrencySymbol();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Yaklaşan Ödemeler (30 Gün)' : 'Upcoming Payments (30 Days)',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            if (upcomingBills.isEmpty)
+              Text(
+                isTurkish ? 'Yaklaşan ödeme yok' : 'No upcoming payments',
+                style: Theme.of(context).textTheme.bodyLarge,
+              )
+            else
+              ...upcomingBills.take(5).map((bill) {
+                final dueDate = bill.dueDate ?? bill.nextDate ?? now;
+                final daysUntil = dueDate.difference(now).inDays;
+                
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: daysUntil <= 7 ? Colors.red : Colors.orange,
+                    child: Icon(
+                      bill.type == BillSubscriptionType.bill ? Icons.receipt : Icons.refresh,
+                      color: Colors.white,
+                    ),
+                  ),
+                  title: Text(bill.name),
+                  subtitle: Text(
+                    daysUntil == 0 
+                      ? (isTurkish ? 'Bugün ödenecek' : 'Due today')
+                      : (isTurkish ? '$daysUntil gün içinde' : 'In $daysUntil days'),
+                  ),
+                  trailing: Text(
+                    '$currencySymbol${bill.amount.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBillsPaymentHistory(bool isTurkish, AppStateProvider appState) {
+    final filteredBills = _filteredBillsSubscriptions;
+    final paidBills = filteredBills.where((b) => b.isPaid).toList();
+    paidBills.sort((a, b) => (b.updatedAt).compareTo(a.updatedAt));
+
+    final currencySymbol = appState.getCurrencySymbol();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTurkish ? 'Son Ödemeler' : 'Recent Payments',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            if (paidBills.isEmpty)
+              Text(
+                isTurkish ? 'Henüz ödeme geçmişi yok' : 'No payment history yet',
+                style: Theme.of(context).textTheme.bodyLarge,
+              )
+            else
+              ...paidBills.take(5).map((bill) {
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.green,
+                    child: Icon(
+                      bill.type == BillSubscriptionType.bill ? Icons.receipt : Icons.refresh,
+                      color: Colors.white,
+                    ),
+                  ),
+                  title: Text(bill.name),
+                  subtitle: Text(
+                    '${bill.updatedAt.day}/${bill.updatedAt.month}/${bill.updatedAt.year}',
+                  ),
+                  trailing: Text(
+                    '$currencySymbol${bill.amount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
   }
 }

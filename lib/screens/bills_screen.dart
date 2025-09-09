@@ -24,6 +24,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
   String _searchQuery = '';
   String _sortBy = 'dueDate'; // dueDate, amount, name
   bool _showOnlyOverdue = false;
+  DateTimeRange? _selectedDateRange;
 
   late TabController _tabController;
 
@@ -184,6 +185,95 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
     }
   }
 
+  Future<void> _refundBillPayment(BillSubscription bill) async {
+    final appState = context.read<AppStateProvider>();
+    final isTurkish = appState.selectedLanguage == 'Turkish';
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isTurkish ? 'Ödemeyi İade Et' : 'Refund Payment'),
+        content: Text(
+          isTurkish 
+            ? '${bill.name} için yapılan ödemeyi iade etmek istediğinizden emin misiniz? Bu işlem geri alınamaz.'
+            : 'Are you sure you want to refund the payment for ${bill.name}? This action cannot be undone.'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(isTurkish ? 'İptal' : 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.orange),
+            child: Text(isTurkish ? 'İade Et' : 'Refund'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final now = DateTime.now();
+        
+        // Find and delete the related transaction
+        final transactions = appState.transactions;
+        final relatedTransaction = transactions.where((t) => 
+          t.description.contains(bill.name) && 
+          (t.description.contains('Bill Payment:') || 
+           t.description.contains('Subscription Payment:') ||
+           t.description.contains('Fatura Ödemesi:') ||
+           t.description.contains('Abonelik Ödemesi:')) &&
+          t.amount == bill.amount
+        ).firstOrNull;
+        
+        if (relatedTransaction != null) {
+          // Delete the transaction (this will automatically refund the account balance)
+          await appState.deleteTransaction(relatedTransaction.id!);
+        } else {
+          // If no transaction found, manually refund the account balance
+          // This handles cases where the transaction might have been manually deleted
+          final accounts = appState.accounts;
+          if (accounts.isNotEmpty) {
+            // Refund to the first available account (or you could ask user to select)
+            final refundAccount = accounts.first;
+            final updatedAccount = refundAccount.copyWith(
+              balance: refundAccount.balance + bill.amount,
+              updatedAt: now,
+            );
+            await appState.updateAccount(updatedAccount);
+          }
+        }
+        
+        // Mark bill as unpaid
+        final updatedBill = bill.copyWith(
+          isPaid: false,
+          updatedAt: now,
+        );
+        await appState.updateBillSubscription(updatedBill);
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isTurkish ? 'Ödeme başarıyla iade edildi' : 'Payment successfully refunded'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isTurkish ? 'İade işlemi başarısız: $e' : 'Refund failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   DateTime _calculateNextDate(Frequency frequency, DateTime currentDate) {
     switch (frequency) {
       case Frequency.daily:
@@ -284,10 +374,34 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                   child: TabBarView(
                     controller: _tabController,
                     children: [
-                      _buildBillsList(isTurkish),
-                      _buildSubscriptionsList(isTurkish),
-                      _buildCalendarView(isTurkish),
-                      _buildAnalyticsView(isTurkish),
+                      RefreshIndicator(
+                        onRefresh: () async {
+                          await context.read<AppStateProvider>().loadAllData();
+                          await _loadData();
+                        },
+                        child: _buildBillsList(isTurkish),
+                      ),
+                      RefreshIndicator(
+                        onRefresh: () async {
+                          await context.read<AppStateProvider>().loadAllData();
+                          await _loadData();
+                        },
+                        child: _buildSubscriptionsList(isTurkish),
+                      ),
+                      RefreshIndicator(
+                        onRefresh: () async {
+                          await context.read<AppStateProvider>().loadAllData();
+                          await _loadData();
+                        },
+                        child: _buildCalendarView(isTurkish),
+                      ),
+                      RefreshIndicator(
+                        onRefresh: () async {
+                          await context.read<AppStateProvider>().loadAllData();
+                          await _loadData();
+                        },
+                        child: _buildAnalyticsView(isTurkish),
+                      ),
                     ],
                   ),
                 ),
@@ -301,10 +415,60 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildBillsList(bool isTurkish) {
-    final bills = _billsSubscriptions
-        .where((item) => item.type == BillSubscriptionType.bill)
+  List<BillSubscription> _getFilteredBills(BillSubscriptionType type) {
+    List<BillSubscription> items = _billsSubscriptions
+        .where((item) => item.type == type)
         .toList();
+
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      items = items.where((item) => 
+        item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+        (item.description?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false)
+      ).toList();
+    }
+
+    // Apply overdue filter
+    if (_showOnlyOverdue) {
+      final now = DateTime.now();
+      items = items.where((item) => 
+        !item.isPaid && 
+        ((item.dueDate != null && item.dueDate!.isBefore(now)) ||
+         (item.nextDate != null && item.nextDate!.isBefore(now)))
+      ).toList();
+    }
+
+    // Apply date range filter
+    if (_selectedDateRange != null) {
+      items = items.where((item) {
+        final date = item.dueDate ?? item.nextDate;
+        if (date == null) return true;
+        
+        return date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+               date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
+      }).toList();
+    }
+
+    // Apply sorting
+    items.sort((a, b) {
+      switch (_sortBy) {
+        case 'amount':
+          return b.amount.compareTo(a.amount);
+        case 'name':
+          return a.name.compareTo(b.name);
+        case 'dueDate':
+        default:
+          final aDate = a.dueDate ?? a.nextDate ?? DateTime.now();
+          final bDate = b.dueDate ?? b.nextDate ?? DateTime.now();
+          return aDate.compareTo(bDate);
+      }
+    });
+
+    return items;
+  }
+
+  Widget _buildBillsList(bool isTurkish) {
+    final bills = _getFilteredBills(BillSubscriptionType.bill);
 
     if (bills.isEmpty) {
       return _buildEmptyState(
@@ -322,9 +486,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
   }
 
   Widget _buildSubscriptionsList(bool isTurkish) {
-    final subscriptions = _billsSubscriptions
-        .where((item) => item.type == BillSubscriptionType.subscription)
-        .toList();
+    final subscriptions = _getFilteredBills(BillSubscriptionType.subscription);
 
     if (subscriptions.isEmpty) {
       return _buildEmptyState(
@@ -513,7 +675,27 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                       ),
                     ),
                   ),
-                if (!bill.isPaid) const SizedBox(width: AppSpacing.sm),
+                if (bill.isPaid)
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _refundBillPayment(bill),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.orange,
+                      ),
+                      child: Builder(
+                        builder: (context) {
+                          final appState = context.watch<AppStateProvider>();
+                          final isTurkish = appState.selectedLanguage == 'Turkish';
+                          return Text(
+                            isTurkish ? 'İADE ET' : 'REFUND',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: AppSpacing.sm),
                 OutlinedButton(
                   onPressed: () => _showItemOptions(bill),
                   style: OutlinedButton.styleFrom(
@@ -642,7 +824,27 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                       ),
                     ),
                   ),
-                if (daysUntilNext <= 0) const SizedBox(width: AppSpacing.sm),
+                if (subscription.isPaid)
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _refundBillPayment(subscription),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.orange,
+                      ),
+                      child: Builder(
+                        builder: (context) {
+                          final appState = context.watch<AppStateProvider>();
+                          final isTurkish = appState.selectedLanguage == 'Turkish';
+                          return Text(
+                            isTurkish ? 'İADE ET' : 'REFUND',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: AppSpacing.sm),
                 OutlinedButton(
                   onPressed: () => _showItemOptions(subscription),
                   style: OutlinedButton.styleFrom(
@@ -802,6 +1004,61 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                 checkmarkColor: Colors.red,
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          // Date Range Filter
+          InkWell(
+            onTap: () async {
+              final dateRange = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+                initialDateRange: _selectedDateRange,
+              );
+              
+              if (dateRange != null) {
+                setState(() {
+                  _selectedDateRange = dateRange;
+                });
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.date_range, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _selectedDateRange != null
+                          ? '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}/${_selectedDateRange!.end.year}'
+                          : (isTurkish ? 'Tarih Aralığı Seçin' : 'Select Date Range'),
+                      style: TextStyle(
+                        color: _selectedDateRange != null 
+                            ? Theme.of(context).textTheme.bodyLarge?.color 
+                            : Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  if (_selectedDateRange != null)
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedDateRange = null;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, size: 18),
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

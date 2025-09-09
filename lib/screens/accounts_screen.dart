@@ -131,11 +131,16 @@ class _AccountsScreenState extends State<AccountsScreen> {
             backgroundColor: Colors.transparent,
             elevation: 0,
           ),
-          body: isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : accounts.isEmpty
-                  ? _buildEmptyState(context, isTurkish)
-                  : _buildAccountsByCategory(context, accounts, isTurkish),
+          body: RefreshIndicator(
+            onRefresh: () async {
+              await context.read<AppStateProvider>().loadAllData();
+            },
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : accounts.isEmpty
+                    ? _buildEmptyState(context, isTurkish)
+                    : _buildAccountsByCategory(context, accounts, isTurkish),
+          ),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _showAddAccountDialog(context),
             backgroundColor: Theme.of(context).primaryColor,

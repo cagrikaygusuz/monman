@@ -199,10 +199,30 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
               : TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildTransactionList(context, filteredTransactions, accounts, selectedLanguage),
-                    _buildTransactionList(context, incomeTransactions, accounts, selectedLanguage),
-                    _buildTransactionList(context, expenseTransactions, accounts, selectedLanguage),
-                    _buildTransactionList(context, transferTransactions, accounts, selectedLanguage),
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        await context.read<AppStateProvider>().loadAllData();
+                      },
+                      child: _buildTransactionList(context, filteredTransactions, accounts, selectedLanguage),
+                    ),
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        await context.read<AppStateProvider>().loadAllData();
+                      },
+                      child: _buildTransactionList(context, incomeTransactions, accounts, selectedLanguage),
+                    ),
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        await context.read<AppStateProvider>().loadAllData();
+                      },
+                      child: _buildTransactionList(context, expenseTransactions, accounts, selectedLanguage),
+                    ),
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        await context.read<AppStateProvider>().loadAllData();
+                      },
+                      child: _buildTransactionList(context, transferTransactions, accounts, selectedLanguage),
+                    ),
                   ],
                 ),
           floatingActionButton: FloatingActionButton(
@@ -603,6 +623,60 @@ class _TransactionsScreenState extends State<TransactionsScreen> with TickerProv
                         _selectedAccount = value;
                       });
                     },
+                  ),
+                  
+                  const SizedBox(height: AppSpacing.md),
+                  
+                  // Date Range Filter
+                  InkWell(
+                    onTap: () async {
+                      final dateRange = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                        initialDateRange: _selectedDateRange,
+                      );
+                      
+                      if (dateRange != null) {
+                        setDialogState(() {
+                          _selectedDateRange = dateRange;
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.date_range),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              _selectedDateRange != null
+                                  ? '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}/${_selectedDateRange!.end.year}'
+                                  : 'Select Date Range',
+                              style: TextStyle(
+                                color: _selectedDateRange != null 
+                                    ? Theme.of(context).textTheme.bodyLarge?.color 
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                          if (_selectedDateRange != null)
+                            IconButton(
+                              onPressed: () {
+                                setDialogState(() {
+                                  _selectedDateRange = null;
+                                });
+                              },
+                              icon: const Icon(Icons.clear, size: 20),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),

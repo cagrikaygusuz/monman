@@ -94,7 +94,7 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
         name: _nameController.text.trim(),
         type: _selectedType,
         amount: double.parse(_amountController.text),
-        description: _descriptionController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty ? 'No description' : _descriptionController.text.trim(),
         categoryId: _selectedCategory?.id,
         accountId: _selectedAccount?.id,
         dueDate: _selectedType == BillSubscriptionType.bill ? _selectedDueDate : null,
@@ -135,11 +135,14 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
                       size: 28,
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      _isEditing 
-                          ? (isTurkish ? 'Öğeyi Düzenle' : 'Edit Item')
-                          : (isTurkish ? 'Fatura veya Abonelik Ekle' : 'Add Bill or Subscription'),
-                      style: Theme.of(context).textTheme.headlineSmall,
+                    Expanded(
+                      child: Text(
+                        _isEditing 
+                            ? (isTurkish ? 'Öğeyi Düzenle' : 'Edit Item')
+                            : (isTurkish ? 'Fatura veya Abonelik Ekle' : 'Add Bill or Subscription'),
+                        style: Theme.of(context).textTheme.headlineSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
@@ -227,17 +230,11 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
                         TextFormField(
                           controller: _descriptionController,
                           decoration: InputDecoration(
-                            labelText: isTurkish ? 'Açıklama' : 'Description',
+                            labelText: isTurkish ? 'Açıklama (İsteğe Bağlı)' : 'Description (Optional)',
                             hintText: isTurkish ? 'Açıklama girin' : 'Enter description',
                             prefixIcon: const Icon(Icons.description_outlined),
                           ),
                           textCapitalization: TextCapitalization.sentences,
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return isTurkish ? 'Lütfen bir açıklama girin' : 'Please enter a description';
-                            }
-                            return null;
-                          },
                         ),
 
                       const SizedBox(height: AppSpacing.md),
