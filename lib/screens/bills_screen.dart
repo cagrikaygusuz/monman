@@ -4,6 +4,7 @@ import '../constants/app_theme.dart';
 import '../models/bill_subscription.dart';
 import '../models/account.dart';
 import '../models/category.dart';
+import '../models/transaction.dart';
 import '../providers/app_state_provider.dart';
 import '../services/database_helper.dart';
 import '../widgets/add_bill_subscription_dialog.dart';
@@ -120,7 +121,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
             return ListTile(
               leading: Icon(_getAccountTypeIcon(account.type)),
               title: Text(account.name),
-              subtitle: Text('\$${account.balance.toStringAsFixed(2)}'),
+              subtitle: Text('${appState.getCurrencySymbol()}${account.balance.toStringAsFixed(2)}'),
               onTap: () => Navigator.of(context).pop(account),
             );
           }).toList(),
@@ -135,23 +136,42 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
       }
 
       try {
+        final now = DateTime.now();
+        
         // Mark as paid and update next date for subscriptions
         final updatedItem = item.copyWith(
           isPaid: true,
           nextDate: item.type == BillSubscriptionType.subscription
-              ? _calculateNextDate(item.frequency!, DateTime.now())
+              ? _calculateNextDate(item.frequency!, now)
               : null,
+          updatedAt: now,
         );
         
         await DatabaseHelper().updateBillSubscription(updatedItem);
         
+        // Create transaction record for the payment
+        final transaction = Transaction(
+          type: TransactionType.expense,
+          amount: item.amount,
+          description: '${item.type == BillSubscriptionType.bill ? (isTurkish ? 'Fatura Ödemesi' : 'Bill Payment') : (isTurkish ? 'Abonelik Ödemesi' : 'Subscription Payment')}: ${item.name}',
+          accountId: selectedAccount.id!,
+          date: now,
+          notes: item.description,
+          createdAt: now,
+          updatedAt: now,
+        );
+        
+        await DatabaseHelper().insertTransaction(transaction);
+        
         // Update account balance
         final updatedAccount = selectedAccount.copyWith(
           balance: selectedAccount.balance - item.amount,
-          updatedAt: DateTime.now(),
+          updatedAt: now,
         );
         await DatabaseHelper().updateAccount(updatedAccount);
 
+        // Use AppStateProvider to reload all data for real-time updates
+        await context.read<AppStateProvider>().loadAllData();
         await _loadData();
         if (mounted) {
           _showSuccessSnackBar(isTurkish ? 'Ödeme başarıyla işlendi' : 'Payment processed successfully');
@@ -434,7 +454,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${bill.amount.toStringAsFixed(2)}',
+                      '${context.read<AppStateProvider>().getCurrencySymbol()}${bill.amount.toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -591,7 +611,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                   ),
                 ),
                 Text(
-                  '\$${subscription.amount.toStringAsFixed(2)}',
+                  '${context.read<AppStateProvider>().getCurrencySymbol()}${subscription.amount.toStringAsFixed(2)}',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -841,7 +861,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
               Expanded(
                 child: _buildAnalyticsCard(
                   isTurkish ? 'Aylık Toplam' : 'Total Monthly',
-                  '\$${(analytics['totalMonthly'] ?? 0.0).toStringAsFixed(0)}',
+                  '${context.read<AppStateProvider>().getCurrencySymbol()}${(analytics['totalMonthly'] ?? 0.0).toStringAsFixed(0)}',
                   Icons.attach_money,
                   Colors.blue,
                 ),
@@ -872,7 +892,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
               Expanded(
                 child: _buildAnalyticsCard(
                   isTurkish ? 'Ort. Tutar' : 'Avg. Amount',
-                  '\$${(analytics['averageAmount'] ?? 0.0).toStringAsFixed(0)}',
+                  '${context.read<AppStateProvider>().getCurrencySymbol()}${(analytics['averageAmount'] ?? 0.0).toStringAsFixed(0)}',
                   Icons.analytics,
                   Colors.orange,
                 ),
@@ -933,7 +953,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              '\$${bill.amount.toStringAsFixed(2)}',
+              '${context.read<AppStateProvider>().getCurrencySymbol()}${bill.amount.toStringAsFixed(2)}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (!bill.isPaid)
@@ -992,7 +1012,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(
-                      '\$${monthlyTotal.toStringAsFixed(2)}',
+                      '${context.read<AppStateProvider>().getCurrencySymbol()}${monthlyTotal.toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         color: Colors.red,
                         fontWeight: FontWeight.bold,
@@ -1007,7 +1027,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(
-                      '\$${paidThisMonth.toStringAsFixed(2)}',
+                      '${context.read<AppStateProvider>().getCurrencySymbol()}${paidThisMonth.toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         color: Colors.green,
                         fontWeight: FontWeight.bold,
@@ -1022,7 +1042,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(
-                      '\$${(monthlyTotal - paidThisMonth).toStringAsFixed(2)}',
+                      '${context.read<AppStateProvider>().getCurrencySymbol()}${(monthlyTotal - paidThisMonth).toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         color: Colors.orange,
                         fontWeight: FontWeight.bold,
@@ -1109,7 +1129,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                       child: Text(category['name']),
                     ),
                     Text(
-                      '\$${category['amount'].toStringAsFixed(0)}',
+                      '${context.read<AppStateProvider>().getCurrencySymbol()}${category['amount'].toStringAsFixed(0)}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -1185,7 +1205,7 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           trailing: Text(
-                            '\$${payment['amount'].toStringAsFixed(2)}',
+                            '${context.read<AppStateProvider>().getCurrencySymbol()}${payment['amount'].toStringAsFixed(2)}',
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: Colors.green,
@@ -1411,8 +1431,8 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
         insights.add({
           'title': isTurkish ? 'Yüksek Abonelik Maliyetleri' : 'High Subscription Costs',
           'description': isTurkish 
-            ? 'Aylık abonelik harcamanız \$${totalMonthly.toStringAsFixed(0)} - bu oldukça yüksek'
-            : 'Your monthly subscription spending is \$${totalMonthly.toStringAsFixed(0)} - this is quite high',
+            ? 'Aylık abonelik harcamanız ${totalMonthly.toStringAsFixed(0)} - bu oldukça yüksek'
+            : 'Your monthly subscription spending is ${totalMonthly.toStringAsFixed(0)} - this is quite high',
           'icon': Icons.trending_up,
           'color': Colors.red,
         });
@@ -1420,8 +1440,8 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
         insights.add({
           'title': isTurkish ? 'Orta Seviye Harcama' : 'Moderate Spending',
           'description': isTurkish 
-            ? 'Aylık abonelik harcamanız \$${totalMonthly.toStringAsFixed(0)} - makul seviyede'
-            : 'Your monthly subscription spending is \$${totalMonthly.toStringAsFixed(0)} - reasonable level',
+            ? 'Aylık abonelik harcamanız ${totalMonthly.toStringAsFixed(0)} - makul seviyede'
+            : 'Your monthly subscription spending is ${totalMonthly.toStringAsFixed(0)} - reasonable level',
           'icon': Icons.trending_flat,
           'color': Colors.orange,
         });
@@ -1429,8 +1449,8 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
         insights.add({
           'title': isTurkish ? 'Düşük Harcama' : 'Low Spending',
           'description': isTurkish 
-            ? 'Aylık abonelik harcamanız \$${totalMonthly.toStringAsFixed(0)} - çok iyi kontrol ediyorsunuz'
-            : 'Your monthly subscription spending is \$${totalMonthly.toStringAsFixed(0)} - very well controlled',
+            ? 'Aylık abonelik harcamanız ${totalMonthly.toStringAsFixed(0)} - çok iyi kontrol ediyorsunuz'
+            : 'Your monthly subscription spending is ${totalMonthly.toStringAsFixed(0)} - very well controlled',
           'icon': Icons.trending_down,
           'color': Colors.green,
         });
@@ -1477,8 +1497,8 @@ class _BillsScreenState extends State<BillsScreen> with TickerProviderStateMixin
       insights.add({
         'title': isTurkish ? 'Potansiyel Tasarruf' : 'Potential Savings',
         'description': isTurkish 
-          ? '$subscriptionCount aboneliğiniz var - paketleyerek ayda \$${potentialSavings} tasarruf edebilirsiniz'
-          : 'You have $subscriptionCount subscriptions - consider bundling to save \$${potentialSavings}/month',
+          ? '$subscriptionCount aboneliğiniz var - paketleyerek ayda ${potentialSavings} tasarruf edebilirsiniz'
+          : 'You have $subscriptionCount subscriptions - consider bundling to save ${potentialSavings}/month',
         'icon': Icons.savings,
         'color': Colors.green,
       });

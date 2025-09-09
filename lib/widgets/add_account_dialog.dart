@@ -592,7 +592,7 @@ class _AddAccountDialogState extends State<AddAccountDialog> {
                   context: context,
                   initialDate: _lastPaymentDate ?? DateTime.now(),
                   firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
                 );
                 if (date != null) {
                   setState(() {

@@ -43,10 +43,11 @@ class AccountDetailScreen extends StatelessWidget {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              // Account Info Card
-              Container(
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Account Info Card
+                Container(
                 width: double.infinity,
                 margin: const EdgeInsets.all(AppSpacing.md),
                 padding: const EdgeInsets.all(AppSpacing.lg),
@@ -181,7 +182,8 @@ class AccountDetailScreen extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               
               // Transactions List
-              Expanded(
+              SizedBox(
+                height: 400, // Fixed height for transactions list
                 child: accountTransactions.isEmpty
                     ? _buildEmptyTransactionsState(context, isTurkish)
                     : ListView.separated(
@@ -195,6 +197,7 @@ class AccountDetailScreen extends StatelessWidget {
                       ),
               ),
             ],
+            ),
           ),
         );
       },
@@ -980,20 +983,41 @@ class AccountDetailScreen extends StatelessWidget {
               ),
               if (!installment.isPaid) ...[
                 const SizedBox(height: AppSpacing.xs),
-                TextButton(
-                  onPressed: () => _showPayInstallmentDialog(context, installment, appState),
-                  style: TextButton.styleFrom(
-                    foregroundColor: statusColor,
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 20),
-                  ),
-                  child: Text(
-                    isTurkish ? 'Öde' : 'Pay',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: statusColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () => _showEditInstallmentDialog(context, installment, appState),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 20),
+                      ),
+                      child: Text(
+                        isTurkish ? 'Düzenle' : 'Edit',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    TextButton(
+                      onPressed: () => _showPayInstallmentDialog(context, installment, appState),
+                      style: TextButton.styleFrom(
+                        foregroundColor: statusColor,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 20),
+                      ),
+                      child: Text(
+                        isTurkish ? 'Öde' : 'Pay',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: statusColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -1409,6 +1433,99 @@ class AccountDetailScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _showEditInstallmentDialog(BuildContext context, LoanInstallment installment, AppStateProvider appState) {
+    final isTurkish = appState.selectedLanguage == 'Turkish';
+    final TextEditingController amountController = TextEditingController(
+      text: installment.amount.toStringAsFixed(2),
+    );
+    DateTime selectedDate = installment.dueDate;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateDialog) {
+            return AlertDialog(
+              title: Text('${isTurkish ? 'Taksiti Düzenle' : 'Edit Installment'} #${installment.installmentNumber}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: isTurkish ? 'Tutar' : 'Amount',
+                      prefixText: appState.getCurrencySymbol(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    leading: const Icon(Icons.calendar_today),
+                    title: Text(isTurkish ? 'Vade Tarihi' : 'Due Date'),
+                    subtitle: Text('${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 3650)),
+                      );
+                      if (date != null) {
+                        setStateDialog(() {
+                          selectedDate = date;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(isTurkish ? 'İptal' : 'Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final newAmount = double.tryParse(amountController.text);
+                    if (newAmount != null && newAmount > 0) {
+                      try {
+                        final updatedInstallment = installment.copyWith(
+                          amount: newAmount,
+                          dueDate: selectedDate,
+                          updatedAt: DateTime.now(),
+                        );
+                        await appState.updateLoanInstallment(updatedInstallment);
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isTurkish 
+                                ? 'Taksit başarıyla güncellendi'
+                                : 'Installment updated successfully'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isTurkish 
+                                ? 'Taksit güncellenirken hata oluştu: $e'
+                                : 'Error updating installment: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: Text(isTurkish ? 'Güncelle' : 'Update'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
   

@@ -340,6 +340,16 @@ class AppStateProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> updateLoanInstallment(LoanInstallment installment) async {
+    try {
+      await DatabaseHelper().updateLoanInstallment(installment);
+      await loadAllData();
+    } catch (e) {
+      debugPrint('Error updating loan installment: $e');
+      rethrow;
+    }
+  }
+
   // Category Management Methods
   List<Category> getCategoriesByType(CategoryType type) {
     return _categories.where((c) => c.type == type).toList()

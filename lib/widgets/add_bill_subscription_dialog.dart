@@ -68,8 +68,6 @@ class _AddBillSubscriptionDialogState extends State<AddBillSubscriptionDialog> w
         _selectedNextDate = widget.item!.nextDate!;
       }
       _tabController.index = _selectedType.index;
-    } else {
-      _selectedAccount = widget.accounts.first;
     }
   }
 
